@@ -21,12 +21,14 @@
 
 1. エクスプローラーで、展開した `shatter-arena-main` フォルダを開きます。
 2. フォルダ上部のアドレスバーに `powershell` と入力して Enter を押します。
-3. 開いた画面に次のコマンドを1行ずつ貼り付け、各行の後にEnterを押します。
+3. 開いたPowerShellに次のコマンドを1行ずつ貼り付け、各行の後にEnterを押します。PowerShellの実行ポリシーによって `npm` がブロックされる場合があるため、`npm.cmd` と入力してください。
 
 ```powershell
-npm install
-npm start
+npm.cmd install
+npm.cmd start
 ```
+
+`npm.cmd` でも起動できない場合は、コマンドプロンプト（cmd）を開いてゲームのフォルダに移動し、`npm install` と `npm start` を実行してください。
 
 4. `Shatter Arena listening on 3000` と表示されたら、ブラウザで [http://localhost:3000](http://localhost:3000) を開きます。
 5. ゲームを終了するときは、PowerShellの画面で `Ctrl+C` を押します。
