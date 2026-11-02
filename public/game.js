@@ -8,7 +8,7 @@ const roster = [
   { id:'thomas', name:'THOMAS', jp:'タンク機関車', role:'RAPID / MOBILE', file:'/assets/thomas_the_tank_engine.glb', tint:0xcca1ff }
 ];
 const loader = new GLTFLoader();
-const cache = new Map();
+const cache = new Map(), loaded = new Map();
 let chosen = roster[0].id, socket, selfId, scene, camera, renderer, clock, entities = new Map(), effects = [], running = false, yaw = 0;
 const keys = new Set();
 const $ = (id) => document.getElementById(id);
@@ -32,11 +32,11 @@ function normalizeModel(root) {
 async function loadModel(id) {
   if (!cache.has(id)) {
     const item = roster.find(x => x.id === id);
-    cache.set(id, loader.loadAsync(item.file).then(g => ({ scene:g.scene, animations:g.animations })).catch(err => { cache.delete(id); throw err; }));
+    cache.set(id, loader.loadAsync(item.file).then(g => { const model={ scene:g.scene, animations:g.animations }; loaded.set(id,model); return model; }).catch(err => { cache.delete(id); throw err; }));
   }
   return cache.get(id);
 }
-function cloneModel(id) { const base = cache.get(id); return normalizeModel(cloneSkinned(base.scene)); }
+function cloneModel(id) { const base = loaded.get(id); return normalizeModel(cloneSkinned(base.scene)); }
 
 // Lightweight, independently rendered model cards.
 const cards = $('cards');
