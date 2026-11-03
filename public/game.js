@@ -158,7 +158,7 @@ function setupGame() {
   game.controls.minDistance=5;game.controls.maxDistance=22;game.controls.minPolarAngle=.18;game.controls.maxPolarAngle=1.43;game.controls.enablePan=true;game.controls.panSpeed=.65;
   game.controls.mouseButtons.LEFT=THREE.MOUSE.ROTATE;game.controls.mouseButtons.MIDDLE=THREE.MOUSE.DOLLY;game.controls.mouseButtons.RIGHT=THREE.MOUSE.PAN;
   game.controls.touches.ONE=THREE.TOUCH.ROTATE;game.controls.touches.TWO=THREE.TOUCH.DOLLY_PAN;
-  game.controls.addEventListener('change',()=>{if(state==='playing'&&player)game.focusOffset.copy(game.controls.target).sub(player.group.position)});
+  game.controls.addEventListener('change',()=>{if((state==='playing'||state==='lobby')&&player)game.focusOffset.copy(game.controls.target).sub(player.group.position)});
   player=createPlayer();player.group.position.set(0,0,0);player.yaw=0;game.camera.position.set(0,8,13);game.controls.target.set(0,1,0);drones=[];steam=[];elapsed=0;score=0;wave=1;health=100;spawnIn=1;ramCooldown=0;whistleCooldown=0;whistleTime=0;damageCooldown=0;steamTimer=0;
   updateHud();state='lobby';
 }
@@ -203,8 +203,30 @@ function finish(){if(state!=='playing')return;state='over';const old=best();if(s
 function frame(){
   if(!game)return;raf=requestAnimationFrame(frame);const dt=Math.min(clock.getDelta(),.045);
   if(state==='lobby'){
-    if(player){player.walk+=dt*.45;player.group.rotation.y=Math.sin(performance.now()*.00028)*.11;player.model.position.y=player.model.userData.baseY+Math.sin(player.walk*1.5)*.018;for(const pivot of player.model.userData.wheelPivots||[])pivot.rotation.x+=dt*.16;}
-    game.controls.target.set(player?.group.position.x||0,1,player?.group.position.z||0);game.controls.update();game.renderer.render(game.scene,game.camera);return;
+    if(player&&profile){
+      const ix=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+moveTouch.x;
+      const iz=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0)+moveTouch.y;
+      const forward=new THREE.Vector3(player.group.position.x-game.camera.position.x,0,player.group.position.z-game.camera.position.z).normalize();
+      const right=new THREE.Vector3(-forward.z,0,forward.x),direction=right.multiplyScalar(ix).add(forward.multiplyScalar(-iz));
+      if(direction.lengthSq()>1)direction.normalize();
+      const moving=direction.lengthSq()>.04;
+      player.vx+=direction.x*6.4*dt*4.2;player.vz+=direction.z*6.4*dt*4.2;
+      const drag=Math.exp(-(moving?2.3:4.5)*dt);player.vx*=drag;player.vz*=drag;
+      const speed=Math.hypot(player.vx,player.vz);if(speed>6.1){player.vx*=6.1/speed;player.vz*=6.1/speed;}
+      player.group.position.x=clamp(player.group.position.x+player.vx*dt,-arenaRadius+1,arenaRadius-1);
+      player.group.position.z=clamp(player.group.position.z+player.vz*dt,-arenaRadius+1,arenaRadius-1);
+      const actualSpeed=Math.hypot(player.vx,player.vz);
+      if(actualSpeed>.2){const desired=Math.atan2(player.vx,player.vz);let diff=Math.atan2(Math.sin(desired-player.yaw),Math.cos(desired-player.yaw));player.yaw+=diff*(1-Math.exp(-dt*9));player.group.rotation.y=player.yaw;}
+      player.walk+=actualSpeed*dt*2.9;player.bob+=(Math.sin(player.walk*2)*.035-player.bob)*(1-Math.exp(-dt*7));
+      player.model.position.y=player.model.userData.baseY+player.bob;
+      if(player.model.userData.rodGroup)player.model.userData.rodGroup.rotation.x=Math.sin(player.walk)*.055*Math.min(1,actualSpeed);
+      for(const pivot of player.model.userData.wheelPivots||[])pivot.rotation.x+=actualSpeed*.72*dt;
+      game.controls.target.set(player.group.position.x+game.focusOffset.x,player.group.position.y+game.focusOffset.y+player.bob,player.group.position.z+game.focusOffset.z);
+      steamTimer-=dt;if(actualSpeed>1.3&&steamTimer<=0){puffSteam();steamTimer=.28;}
+    }
+    for(const p of steam){p.life+=dt;p.mesh.position.x+=p.vx*dt;p.mesh.position.z+=p.vz*dt;p.mesh.position.y+=(p.vy||.8)*dt;p.mesh.scale.multiplyScalar(1+dt*1.5);p.mesh.material.opacity=Math.max(0,.48*(1-p.life/p.duration));if(p.life>=p.duration){game.scene.remove(p.mesh);p.mesh.geometry.dispose();p.mesh.material.dispose();p.dead=true;}}
+    steam=steam.filter(p=>!p.dead);
+    game.controls.update();game.renderer.render(game.scene,game.camera);return;
   }
   if(state!=='playing'){game.renderer.render(game.scene,game.camera);return}elapsed+=dt;
   const newWave=1+Math.floor(elapsed/18);if(newWave!==wave){wave=newWave;toast(`WAVE ${wave} — 増援接近！`)}
@@ -294,13 +316,13 @@ async function removeFriend(friendId){
 }
 async function copyMyId(){if(!profile)return;try{await navigator.clipboard.writeText(`@${profile.id}`);$('friendMessage').textContent='IDをコピーしました。'}catch{$('friendMessage').textContent=`あなたのID: @${profile.id}`}}
 function boot(){
-  try{setupGame();$('modelStatus').textContent='Thomasの3Dモデルを準備中';clock.start();raf=requestAnimationFrame(frame);void loadModel().catch(error=>{console.error('Thomas model unavailable; keeping the built-in 3D engine',error);$('modelStatus').textContent='Thomas 3D'});}
+  try{setupGame();$('modelStatus').textContent='Thomasの3Dモデルを準備中';clock.start();raf=requestAnimationFrame(frame);void loadModel().catch(error=>{console.error('Thomas model unavailable; keeping the built-in 3D engine',error);$('modelStatus').textContent='簡易モデルで表示中'});}
   catch(error){console.error('3D scene could not start',error);$('modelStatus').textContent='3D画面を起動できません。WebGL対応ブラウザーを使ってください。';}
   void initializeProfile();
 }
 
-$('playButton').addEventListener('click',startGame);$('editProfileButton').addEventListener('click',()=>openProfile());$('profileForm').addEventListener('submit',submitProfile);$('closeProfileButton').addEventListener('click',()=>$('profileModal').classList.add('hidden'));$('addFriendForm').addEventListener('submit',addFriend);$('friendList').addEventListener('click',event=>{const button=event.target.closest('[data-remove-friend]');if(button)void removeFriend(button.dataset.removeFriend)});$('copyIdButton').addEventListener('click',copyMyId);$('retryButton').addEventListener('click',startGame);$('resumeButton').addEventListener('click',resume);$('pauseButton').addEventListener('click',pause);$('leaveButton').addEventListener('click',returnToLobby);$('resultLobbyButton').addEventListener('click',returnToLobby);$('attackButton').addEventListener('pointerdown',e=>{e.preventDefault();ram(false)});$('dashButton').addEventListener('pointerdown',e=>{e.preventDefault();ram(true)});
-addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();if(e.code==='Escape'){if(state==='playing')pause();else if(state==='paused')resume();return}keys.add(e.code);if(e.repeat)return;if(e.code==='Space')ram(false);if(e.code==='KeyQ'||e.code==='ShiftLeft'||e.code==='ShiftRight')ram(true)});addEventListener('keyup',e=>keys.delete(e.code));
+$('playButton').addEventListener('click',()=>{if(!profile)openProfile();else toast('W A S D または左スティックで移動')});$('editProfileButton').addEventListener('click',()=>openProfile());$('profileForm').addEventListener('submit',submitProfile);$('closeProfileButton').addEventListener('click',()=>$('profileModal').classList.add('hidden'));$('addFriendForm').addEventListener('submit',addFriend);$('friendList').addEventListener('click',event=>{const button=event.target.closest('[data-remove-friend]');if(button)void removeFriend(button.dataset.removeFriend)});$('copyIdButton').addEventListener('click',copyMyId);
+addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys.add(e.code)});addEventListener('keyup',e=>keys.delete(e.code));
 setInterval(()=>void refreshFriends(),15000);
 const joystick=$('joystick'),stick=$('stick');joystick.addEventListener('pointerdown',e=>{joystickPointer=e.pointerId;joystick.setPointerCapture(e.pointerId);moveStick(e)});joystick.addEventListener('pointermove',e=>{if(e.pointerId===joystickPointer)moveStick(e)});
 function moveStick(e){const r=joystick.getBoundingClientRect(),dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),len=Math.hypot(dx,dy),s=Math.min(1,len/38);moveTouch={x:len?dx/len*s:0,y:len?dy/len*s:0};stick.style.transform=`translate(${moveTouch.x*34}px,${moveTouch.y*34}px)`}
