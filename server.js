@@ -23,6 +23,11 @@ const execFileAsync = promisify(execFile);
 app.use(express.static(path.join(ROOT, 'public')));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.get('/version', (_req, res) => res.set('Cache-Control', 'no-store').json({ version: VERSION, canSelfUpdate: !HOSTED }));
+app.get('/network', (_req, res) => {
+  const addresses = Object.values(os.networkInterfaces()).flat().filter(info => info && !info.internal && (info.family === 'IPv4' || info.family === 4) && (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(info.address))).map(info => info.address);
+  addresses.sort((a,b) => (a.startsWith('192.168.') ? 0 : a.startsWith('10.') ? 1 : 2) - (b.startsWith('192.168.') ? 0 : b.startsWith('10.') ? 1 : 2));
+  res.set('Cache-Control','no-store').json({ urls: [...new Set(addresses)].map(address => `http://${address}:${PORT}`) });
+});
 
 let updating = false;
 async function applyGithubUpdate() {
@@ -154,4 +159,8 @@ io.on('connection', (socket) => {
   });
 });
 
-http.listen(PORT, '0.0.0.0', () => console.log(`Shatter Arena listening on ${PORT}`));
+http.listen(PORT, '0.0.0.0', () => {
+  console.log(`Shatter Arena listening on http://localhost:${PORT}`);
+  const addresses = Object.values(os.networkInterfaces()).flat().filter(info => info && !info.internal && (info.family === 'IPv4' || info.family === 4)).map(info => `http://${info.address}:${PORT}`);
+  for (const address of [...new Set(addresses)]) console.log(`LAN play: ${address}`);
+});

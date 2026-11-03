@@ -31,6 +31,8 @@ async function checkForUpdates() {
 }
 checkForUpdates(); setInterval(checkForUpdates, 5*60*1000);
 $('dismissUpdate').addEventListener('click',()=>updateBanner.classList.add('hidden'));
+$('copyAddress').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('networkAddress').textContent);$('copyAddress').textContent='コピーしました';setTimeout(()=>$('copyAddress').textContent='URLをコピー',1600);}catch{toast($('networkAddress').textContent);}});
+fetch('/network',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(data=>{if(data?.urls?.length){$('networkAddress').textContent=data.urls[0];$('networkShare').classList.remove('hidden');}}).catch(()=>{});
 $('updateButton').addEventListener('click', async()=>{
   const button=$('updateButton'), message=$('updateMessage'); button.disabled=true; message.textContent='アップデートを取得・適用しています...';
   try {
@@ -125,7 +127,7 @@ function frame() {
   if(!running)return; requestAnimationFrame(frame); const dt=Math.min(clock.getDelta(),.05), me=entities.get(selfId);
   if(me){
     const speed=7.2; let f=0,s=0; if(keys.has('KeyW'))f++;if(keys.has('KeyS'))f--;if(keys.has('KeyD'))s++;if(keys.has('KeyA'))s--;
-    if(f||s){const len=Math.hypot(f,s);f/=len;s/=len;me.group.position.x+= (Math.sin(yaw)*f+Math.cos(yaw)*s)*speed*dt;me.group.position.z+= (Math.cos(yaw)*f-Math.sin(yaw)*s)*speed*dt;me.group.position.x=THREE.MathUtils.clamp(me.group.position.x,-18.7,18.7);me.group.position.z=THREE.MathUtils.clamp(me.group.position.z,-18.7,18.7);me.group.rotation.y=yaw;}
+    if(f||s){const len=Math.hypot(f,s);f/=len;s/=len;me.group.position.x+= (Math.sin(yaw)*f-Math.cos(yaw)*s)*speed*dt;me.group.position.z+= (Math.cos(yaw)*f+Math.sin(yaw)*s)*speed*dt;me.group.position.x=THREE.MathUtils.clamp(me.group.position.x,-18.7,18.7);me.group.position.z=THREE.MathUtils.clamp(me.group.position.z,-18.7,18.7);me.group.rotation.y=yaw;}
     me.bar.lookAt(camera.position);
     socket.emit('move',{x:me.group.position.x,z:me.group.position.z,yaw});
     const camDist=7.5, target=new THREE.Vector3(me.group.position.x-Math.sin(yaw)*camDist,4.1,me.group.position.z-Math.cos(yaw)*camDist); camera.position.lerp(target,1-Math.exp(-dt*6)); camera.lookAt(me.group.position.x,1.1,me.group.position.z);
