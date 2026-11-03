@@ -160,15 +160,15 @@ function setupGame() {
   game.controls.touches.ONE=THREE.TOUCH.ROTATE;game.controls.touches.TWO=THREE.TOUCH.DOLLY_PAN;
   game.controls.addEventListener('change',()=>{if((state==='playing'||state==='lobby')&&player)game.focusOffset.copy(game.controls.target).sub(player.group.position)});
   player=createPlayer();player.group.position.set(0,0,0);player.yaw=0;game.camera.position.set(0,8,13);game.controls.target.set(0,1,0);drones=[];steam=[];elapsed=0;score=0;wave=1;health=100;spawnIn=1;ramCooldown=0;whistleCooldown=0;whistleTime=0;damageCooldown=0;steamTimer=0;
-  updateHud();state='lobby';
+  updateHud();state='menu';
 }
 
 function startGame() {
-  if(state==='playing')return;if(!profile){openProfile();return}
-  elapsed=0;score=0;wave=1;health=100;spawnIn=.65;ramCooldown=0;whistleCooldown=0;whistleTime=0;damageCooldown=0;steamTimer=0;
-  for(const drone of drones)game.scene.remove(drone.group);for(const particle of steam){game.scene.remove(particle.mesh);particle.mesh.geometry.dispose();particle.mesh.material.dispose()}drones=[];steam=[];
-  player.group.position.set(0,0,8);player.group.rotation.y=Math.PI;player.yaw=Math.PI;player.vx=0;player.vz=0;player.bob=0;game.focusOffset.set(0,1,0);game.controls.target.set(0,1,8);
-  $('pauseOverlay').classList.add('hidden');$('resultOverlay').classList.add('hidden');$('lobbyScreen').classList.add('hidden');$('gameScreen').classList.add('playing');state='playing';clock.start();updateHud();toast('出発！ ドローンを場外へ！');
+  if(state==='lobby')return;if(!profile){openProfile();return}
+  keys.clear();moveTouch={x:0,y:0};
+  for(const particle of steam){game.scene.remove(particle.mesh);particle.mesh.geometry.dispose();particle.mesh.material.dispose()}steam=[];
+  player.group.position.set(0,0,0);player.group.rotation.y=0;player.yaw=0;player.vx=0;player.vz=0;player.bob=0;game.focusOffset.set(0,1,0);game.controls.target.set(0,1,0);
+  $('lobbyScreen').classList.add('hidden');$('gameScreen').classList.add('playing');state='lobby';clock.start();toast('W A S D または左スティックで移動');
 }
 
 function best(){return Number(localStorage.getItem('shatterArenaBest')||0)}
@@ -202,6 +202,7 @@ function finish(){if(state!=='playing')return;state='over';const old=best();if(s
 
 function frame(){
   if(!game)return;raf=requestAnimationFrame(frame);const dt=Math.min(clock.getDelta(),.045);
+  if(state==='menu'&&player){player.model.position.y=player.model.userData.baseY+Math.sin(clock.elapsedTime*1.4)*.012;player.group.rotation.y=Math.sin(clock.elapsedTime*.35)*.035;}
   if(state==='lobby'){
     if(player&&profile){
       const ix=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+moveTouch.x;
@@ -265,7 +266,7 @@ function pause(){if(state!=='playing')return;state='paused';$('pauseOverlay').cl
 function resume(){if(state!=='paused')return;state='playing';$('pauseOverlay').classList.add('hidden');clock.start()}
 function returnToLobby(){
   for(const drone of drones)game.scene.remove(drone.group);for(const p of steam){game.scene.remove(p.mesh);p.mesh.geometry.dispose();p.mesh.material.dispose()}drones=[];steam=[];
-  state='lobby';$('gameScreen').classList.remove('playing');$('lobbyScreen').classList.remove('hidden');$('pauseOverlay').classList.add('hidden');$('resultOverlay').classList.add('hidden');
+  state='menu';$('gameScreen').classList.remove('playing');$('lobbyScreen').classList.remove('hidden');$('pauseOverlay').classList.add('hidden');$('resultOverlay').classList.add('hidden');
   player.group.position.set(0,0,0);player.vx=0;player.vz=0;game.focusOffset.set(0,1,0);game.controls.target.set(0,1,0);clock.start();
 }
 
@@ -321,8 +322,8 @@ function boot(){
   void initializeProfile();
 }
 
-$('playButton').addEventListener('click',()=>{if(!profile)openProfile();else toast('W A S D または左スティックで移動')});$('editProfileButton').addEventListener('click',()=>openProfile());$('profileForm').addEventListener('submit',submitProfile);$('closeProfileButton').addEventListener('click',()=>$('profileModal').classList.add('hidden'));$('addFriendForm').addEventListener('submit',addFriend);$('friendList').addEventListener('click',event=>{const button=event.target.closest('[data-remove-friend]');if(button)void removeFriend(button.dataset.removeFriend)});$('copyIdButton').addEventListener('click',copyMyId);
-addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys.add(e.code)});addEventListener('keyup',e=>keys.delete(e.code));
+$('playButton').addEventListener('click',startGame);$('editProfileButton').addEventListener('click',()=>openProfile());$('profileForm').addEventListener('submit',submitProfile);$('closeProfileButton').addEventListener('click',()=>$('profileModal').classList.add('hidden'));$('addFriendForm').addEventListener('submit',addFriend);$('friendList').addEventListener('click',event=>{const button=event.target.closest('[data-remove-friend]');if(button)void removeFriend(button.dataset.removeFriend)});$('copyIdButton').addEventListener('click',copyMyId);$('pauseButton').addEventListener('click',returnToLobby);
+addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();if(e.code==='Escape'&&state==='lobby'){returnToLobby();return}keys.add(e.code)});addEventListener('keyup',e=>keys.delete(e.code));
 setInterval(()=>void refreshFriends(),15000);
 const joystick=$('joystick'),stick=$('stick');joystick.addEventListener('pointerdown',e=>{joystickPointer=e.pointerId;joystick.setPointerCapture(e.pointerId);moveStick(e)});joystick.addEventListener('pointermove',e=>{if(e.pointerId===joystickPointer)moveStick(e)});
 function moveStick(e){const r=joystick.getBoundingClientRect(),dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),len=Math.hypot(dx,dy),s=Math.min(1,len/38);moveTouch={x:len?dx/len*s:0,y:len?dy/len*s:0};stick.style.transform=`translate(${moveTouch.x*34}px,${moveTouch.y*34}px)`}
