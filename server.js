@@ -1,14 +1,16 @@
 import express from 'express';
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
-import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 const app = express();
 const http = createServer(app);
 const io = new Server(http, { maxHttpBufferSize: 1e6 });
 const PORT = process.env.PORT || 3000;
+const VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
 app.use(express.static('public'));
 app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/version', (_req, res) => res.set('Cache-Control', 'no-store').json({ version: VERSION }));
 
 const rooms = new Map();
 const models = new Set(['soldier', 'super', 'thomas']);

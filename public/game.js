@@ -1,6 +1,6 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
-import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/GLTFLoader.js';
-import { clone as cloneSkinned } from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/utils/SkeletonUtils.js';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 const roster = [
   { id:'soldier', name:'SOLDIER', jp:'戦場の歩兵', role:'BALANCED / ALL-ROUNDER', file:'/assets/soldier_human.glb', tint:0x77dff4 },
@@ -13,6 +13,23 @@ let chosen = roster[0].id, socket, selfId, scene, camera, renderer, clock, entit
 const keys = new Set();
 const $ = (id) => document.getElementById(id);
 const lobby = $('lobby'), game = $('game'), loading = $('loading');
+const updateBanner = $('updateBanner');
+let localVersion = '0.0.0';
+function versionParts(v) { return String(v).split('.').map(n => Number.parseInt(n, 10) || 0); }
+function isNewer(a,b) { const x=versionParts(a), y=versionParts(b); for(let i=0;i<3;i++){if((x[i]||0)>(y[i]||0))return true;if((x[i]||0)<(y[i]||0))return false;}return false; }
+async function checkForUpdates() {
+  try {
+    const local = await fetch('/version', {cache:'no-store'}); if(!local.ok) return;
+    const {version} = await local.json();
+    if(localVersion && version!==localVersion && localVersion!=='0.0.0') { location.reload(); return; }
+    localVersion=version;
+    const remote = await fetch(`https://raw.githubusercontent.com/inei49984-ai/shatter-arena/main/package.json?t=${Date.now()}`, {cache:'no-store'});
+    if(!remote.ok) return;
+    const latest = await remote.json(); if(isNewer(latest.version,localVersion)) updateBanner.classList.remove('hidden');
+  } catch { /* Keep the game usable when GitHub is offline. */ }
+}
+checkForUpdates(); setInterval(checkForUpdates, 5*60*1000);
+$('dismissUpdate').addEventListener('click',()=>updateBanner.classList.add('hidden'));
 
 function addLight(s) {
   s.add(new THREE.HemisphereLight(0xdbeeff, 0x263041, 2.1));
@@ -111,14 +128,17 @@ async function join() {
   $('joinBtn').disabled=true; $('joinBtn').textContent='接続中...'; loading.classList.remove('hidden');
   try { await loadModel(chosen); }
   catch(e){ console.error(e); toast('モデルを読み込めませんでした'); loading.classList.add('hidden'); $('joinBtn').disabled=false; $('joinBtn').innerHTML='アリーナに入る <span>→</span>'; return; }
-  socket=io();
-  socket.on('connect',()=>socket.emit('join',{model:chosen,name:$('playerName').value,room:$('roomCode').value},res=>{
-    if(!res?.ok){toast(res?.error||'接続に失敗しました');socket.disconnect();loading.classList.add('hidden');$('joinBtn').disabled=false;$('joinBtn').innerHTML='アリーナに入る <span>→</span>';return;}
+  socket=io({autoConnect:false,timeout:10000});
+  const resetJoin=()=>{loading.classList.add('hidden');$('joinBtn').disabled=false;$('joinBtn').innerHTML='アリーナに入る <span>→</span>';};
+  let joinSent=false;
+  socket.on('connect',()=>{if(joinSent)return;joinSent=true;socket.timeout(10000).emit('join',{model:chosen,name:$('playerName').value,room:$('roomCode').value},(err,res)=>{
+    if(err||!res?.ok){toast(res?.error||(err?'サーバーの応答がタイムアウトしました':'接続に失敗しました'));socket.disconnect();resetJoin();return;}
     selfId=res.id; $('roomLabel').textContent=res.code; lobby.classList.add('hidden'); game.classList.remove('hidden');loading.classList.add('hidden'); arena(); yaw=0; running=true;
     socket.on('state',updatePlayers); socket.on('move',p=>{const e=entities.get(p.id);if(e){e.group.position.set(p.x,0,p.z);e.group.rotation.y=p.yaw;}});
     socket.on('feed',toast); socket.on('shot',p=>makeShot(p.x,p.z,p.yaw,0xffc36a)); socket.on('hit',p=>{if(p.to===selfId)toast('被弾！');if(p.from===selfId)toast('HIT!');}); frame();
-  }));
-  socket.on('connect_error',()=>{toast('サーバーに接続できません');loading.classList.add('hidden');$('joinBtn').disabled=false;$('joinBtn').innerHTML='アリーナに入る <span>→</span>';});
+  });});
+  socket.on('connect_error',()=>{toast('サーバーに接続できません。サーバー画面で npm.cmd start が動いているか確認してください');socket.disconnect();resetJoin();});
+  socket.connect();
 }
 function leave(){running=false;if(socket){socket.disconnect();socket=null;}if(renderer){renderer.dispose();renderer=null;}entities.clear();effects=[];game.classList.add('hidden');lobby.classList.remove('hidden');$('joinBtn').disabled=false;$('joinBtn').innerHTML='アリーナに入る <span>→</span>';document.exitPointerLock?.();}
 $('joinBtn').addEventListener('click',join); $('leaveBtn').addEventListener('click',leave);
