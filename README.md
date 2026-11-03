@@ -54,18 +54,16 @@ npm.cmd start
 
 ホスティングサービス上のゲームは、GitHubへの更新後にホスト側が再デプロイします。この場合、ゲーム内の自己更新ボタンは表示しません。
 
-## GitHubとオンライン公開
+## 無料サーバーで別Wi-Fiの友達と遊ぶ
 
-このプロジェクトはNode.jsサーバーが必要です。GitHub Pages単体ではSocket.IOサーバーが動かないため、GitHubにコードを置き、Node.jsのWebサービス（例: Render、Railway、Fly.io）へサーバーをデプロイしてください。ホストの設定で `npm install` と `npm start` を指定します。サービスが発行したHTTPS URLを開けば、別のネットワークのプレイヤーとも遊べます。
+GitHub Pagesでは対戦用サーバーが動かないため、Node.jsとWebSocketに対応するRenderのWeb Serviceを使います。このリポジトリには無料プラン用の `render.yaml` を入れています。
 
-```bash
-git init
-git add .
-git commit -m "Build Shatter Arena multiplayer game"
-git branch -M main
-git remote add origin https://github.com/あなたのユーザー名/shatter-arena.git
-git push -u origin main
-```
+1. [Renderにデプロイ](https://render.com/deploy?repo=https://github.com/inei49984-ai/shatter-arena)を開き、Renderに登録またはログインします。
+2. RenderからGitHubへの接続を求められたら許可し、`shatter-arena` リポジトリを選びます。
+3. 設定内容を確認し、プランが **Free** であることを確認してデプロイします。
+4. デプロイ完了後に表示される `https://....onrender.com` のURLを全員に共有します。全員がその同じURLを開き、同じ部屋コードを入力します。
+
+Renderの無料サービスは15分間アクセスがないと停止し、次の接続で再起動に約1分かかることがあります。無料枠の利用上限に達した場合はサービスが停止します。利用量超過による請求を避けたい場合は、支払い方法を登録せずRenderの利用状況を確認してください。無料枠は常時稼働を保証するものではありません。
 
 ## アセット
 
