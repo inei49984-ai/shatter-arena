@@ -8,7 +8,7 @@ $serverPid = 0
 try { $serverPid = [int](Get-Content -LiteralPath $PidFile -Raw) } catch {}
 if ($serverPid -gt 0 -and (Get-Process -Id $serverPid -ErrorAction SilentlyContinue)) {
   Stop-Process -Id $serverPid -Force
-  Write-Host 'Shatter Arenaサーバーを停止しました。'
+  Write-Host 'Tomas Fightサーバーを停止しました。'
 } else {
   Write-Host 'サーバーはすでに停止しています。'
 }

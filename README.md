@@ -1,4 +1,4 @@
-# SHATTER ARENA
+# Tomas Fight
 
 Thomasとフレンドが集まる3Dロビーから始まるゲームです。ロビーで「スタート」を押すと、Thomasを自由に走らせて遊べます。
 

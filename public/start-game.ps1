@@ -38,11 +38,11 @@ try {
 
   try {
     $desktop = [Environment]::GetFolderPath('Desktop')
-    $shortcutPath = Join-Path $desktop 'Shatter Arena.lnk'
+    $shortcutPath = Join-Path $desktop 'Tomas Fight.lnk'
     $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
     $shortcut.TargetPath = Join-Path $PSScriptRoot 'start-game.bat'
     $shortcut.WorkingDirectory = $PSScriptRoot
-    $shortcut.Description = 'Shatter Arenaを起動'
+    $shortcut.Description = 'Tomas Fightを起動'
     $shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,13"
     $shortcut.Save()
   } catch { Write-Host 'デスクトップショートカットを作れませんでした。public/start-game.batから起動できます。' }

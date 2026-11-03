@@ -80,4 +80,4 @@ app.delete('/api/friends/:friendId', (req, res) => {
 
 app.get('*path', (_req, res) => res.sendFile(path.join(root, 'public', 'index.html')));
 
-app.listen(port, '0.0.0.0', () => console.log(`Shatter Arena listening on port ${port}`));
+app.listen(port, '0.0.0.0', () => console.log(`Tomas Fight listening on port ${port}`));
