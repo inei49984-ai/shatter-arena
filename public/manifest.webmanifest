@@ -1,6 +1,6 @@
 {
   "id": "/",
-  "name": "SHATTER ARENA — THOMAS: FULL STEAM",
+  "name": "SHATTER ARENA",
   "short_name": "SHATTER ARENA",
   "description": "トーマスを運転し、ドローンを場外へ吹き飛ばす3Dアリーナゲーム。",
   "lang": "ja",
@@ -8,7 +8,7 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#080b12",
-  "theme_color": "#080b12",
+  "background_color": "#8296a1",
+  "theme_color": "#8296a1",
   "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }
