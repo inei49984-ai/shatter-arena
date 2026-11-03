@@ -112,7 +112,7 @@ function puffSteam() {
 async function loadModel() {
   if(sourceModel)return sourceModel;
   if(modelPromise)return modelPromise;
-  modelPromise=loader.loadAsync(MODEL_URL).then(gltf=>{sourceModel=gltf.scene;sourceModel.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});return sourceModel;
+  modelPromise=loader.loadAsync(MODEL_URL,event=>{const label=$('loadingOverlay').querySelector('p');if(event.lengthComputable&&event.total)label.textContent=`トーマスを読み込み中... ${Math.round(event.loaded/event.total*100)}%`;}).then(gltf=>{sourceModel=gltf.scene;sourceModel.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});return sourceModel;
   }).catch(error=>{modelPromise=null;throw error});
   return modelPromise;
 }
@@ -201,7 +201,7 @@ function frame(){
 function pause(){if(state!=='playing')return;state='paused';$('pauseOverlay').classList.remove('hidden')}
 function resume(){if(state!=='paused')return;state='playing';$('pauseOverlay').classList.add('hidden');clock.start();raf=requestAnimationFrame(frame)}
 
-$('retryButton').addEventListener('click',startGame);$('loadingRetry').addEventListener('click',startGame);$('resumeButton').addEventListener('click',resume);$('pauseButton').addEventListener('click',pause);$('attackButton').addEventListener('pointerdown',e=>{e.preventDefault();ram(false)});$('dashButton').addEventListener('pointerdown',e=>{e.preventDefault();ram(true)});
+$('retryButton').addEventListener('click',startGame);$('resumeButton').addEventListener('click',resume);$('pauseButton').addEventListener('click',pause);$('attackButton').addEventListener('pointerdown',e=>{e.preventDefault();ram(false)});$('dashButton').addEventListener('pointerdown',e=>{e.preventDefault();ram(true)});
 addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();if(e.code==='Escape'){state==='playing'?pause():resume();return}keys.add(e.code);if(e.repeat)return;if(e.code==='Space')ram(false);if(e.code==='KeyQ'||e.code==='ShiftLeft'||e.code==='ShiftRight')ram(true)});addEventListener('keyup',e=>keys.delete(e.code));
 const joystick=$('joystick'),stick=$('stick');joystick.addEventListener('pointerdown',e=>{joystickPointer=e.pointerId;joystick.setPointerCapture(e.pointerId);moveStick(e)});joystick.addEventListener('pointermove',e=>{if(e.pointerId===joystickPointer)moveStick(e)});
 function moveStick(e){const r=joystick.getBoundingClientRect(),dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),len=Math.hypot(dx,dy),s=Math.min(1,len/38);moveTouch={x:len?dx/len*s:0,y:len?dy/len*s:0};stick.style.transform=`translate(${moveTouch.x*34}px,${moveTouch.y*34}px)`}

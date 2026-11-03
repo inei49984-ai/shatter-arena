@@ -18,12 +18,13 @@
     <div class="hud-right"><span>DRONES</span><b id="enemyValue">00</b></div>
     <div class="camera-tip">ドラッグ：カメラ　·　ホイール：ズーム</div>
     <div id="toast" class="toast"></div>
-    <div id="loadingOverlay" class="overlay"><p>ゲームを読み込み中...</p><button id="loadingRetry" class="text-button hidden">もう一度読み込む</button></div>
+    <div id="loadingOverlay" class="overlay"><p>ゲームを読み込み中...</p><button id="loadingRetry" class="text-button hidden" onclick="location.reload()">もう一度読み込む</button></div>
     <div id="pauseOverlay" class="overlay hidden"><h2>一時停止</h2><button id="resumeButton" class="action-button">ゲームに戻る</button></div>
     <div id="resultOverlay" class="overlay hidden"><p id="resultEyebrow" class="result-label">GAME OVER</p><h2 id="resultTitle">ゲームオーバー</h2><p id="resultCopy">トーマスの機関が停止した。</p><div class="result-score"><span>スコア</span><b id="finalScore">00000</b></div><button id="retryButton" class="action-button">もう一度遊ぶ</button></div>
     <div class="mobile-controls"><div id="joystick" class="joystick"><div id="stick" class="stick"></div></div><button id="attackButton" class="attack-button">体当たり</button><button id="dashButton" class="dash-button">汽笛</button></div>
   </main>
-  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}</script>
+  <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+  <script>setTimeout(()=>{const overlay=document.getElementById('loadingOverlay'),retry=document.getElementById('loadingRetry');if(!overlay.classList.contains('hidden')){overlay.querySelector('p').textContent='読み込みに時間がかかっています。再読み込みできます。';retry.classList.remove('hidden')}},45000)</script>
   <script type="module" src="/game.js"></script>
 </body>
 </html>
