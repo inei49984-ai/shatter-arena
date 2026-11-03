@@ -38,6 +38,7 @@ fetch('/updates.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('更
   const list=$('updateLogEntries'); list.replaceChildren();
   for(const entry of entries){const item=document.createElement('article');item.className='update-entry';const meta=document.createElement('span');meta.className='update-entry-meta';meta.textContent=`${entry.version} · ${entry.date}`;const copy=document.createElement('div');const title=document.createElement('b');title.textContent=entry.title;const summary=document.createElement('p');summary.textContent=entry.summary;copy.append(title,summary);item.append(meta,copy);list.append(item);}
 }).catch(()=>{$('updateLogEntries').innerHTML='<p>更新履歴を読み込めませんでした。</p>';});
+if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')) navigator.serviceWorker.register('/sw.js').catch(()=>{});
 $('updateButton').addEventListener('click', async()=>{
   const button=$('updateButton'), message=$('updateMessage'); button.disabled=true; message.textContent='アップデートを取得・適用しています...';
   try {

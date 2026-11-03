@@ -6,3 +6,14 @@
 .hint b{margin-left:8px;color:#8b83ff}.hint b.ready{color:#84e3a8}
 @media(max-width:700px){.hint{max-width:42vw;white-space:normal;text-align:right;line-height:1.55}.network-share{align-items:flex-start;flex-direction:column}.network-share code{display:block;margin:4px 0 0;word-break:break-all}}
 .update-log{margin:0 0 16px;padding:10px 14px;border:1px solid #26364b;background:#0b111bcc}.update-log-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;color:#70e1ff;font:700 10px 'Barlow Condensed';letter-spacing:1.3px}.update-log-title b{margin-left:7px;color:#dce6f1;font-family:'Noto Sans JP',sans-serif;font-size:10px;letter-spacing:0}.update-log-title small{color:#718096;font-size:9px}.update-log-entries{display:grid;gap:5px;max-height:100px;overflow-y:auto}.update-entry{display:grid;grid-template-columns:112px 1fr;gap:8px;align-items:start;padding:4px 0;border-top:1px solid #ffffff10;font-size:10px}.update-entry-meta{color:#70e1ff;font:600 10px 'Barlow Condensed';white-space:nowrap}.update-entry b{color:#e8eef5;font-size:10px}.update-entry p{margin:2px 0 0;color:#8593a6;font-size:9px;line-height:1.5}@media(max-width:700px){.update-entry{grid-template-columns:82px 1fr}.update-log-entries{max-height:86px}}
+/* Keep the lobby usable on short windows, browser zoom, and mobile viewports. */
+html{min-height:100%;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{overflow-x:hidden;overflow-y:auto;min-height:100vh;min-height:100dvh}
+#app{min-height:100vh;min-height:100dvh}
+.lobby{min-height:100vh;min-height:100dvh;height:auto;padding-top:clamp(16px,3.4vh,30px);padding-bottom:clamp(16px,3.4vh,30px)}
+.lobby-copy{margin-top:clamp(18px,6vh,56px);margin-bottom:clamp(14px,3vh,27px)}
+.fighter{height:clamp(170px,32vh,290px)}
+.lobby-foot{flex-wrap:wrap}
+@media(max-height:760px) and (min-width:701px){.lobby-copy{margin-top:18px;margin-bottom:14px}.fighter{height:clamp(160px,27vh,230px)}.joinbar{margin-top:14px}.lobby-foot{padding-top:16px}.update-log{margin-bottom:10px}}
+@media(max-width:700px){body{overflow-y:auto}.lobby{min-height:100dvh;padding-bottom:max(18px,env(safe-area-inset-bottom))}.fighter{height:clamp(165px,27vh,230px)}.lobby-foot{margin-top:20px;padding-top:8px}}
+@media(max-width:390px){.lobby{padding-left:12px;padding-right:12px}.cards{grid-template-columns:1fr}.fighter{height:clamp(210px,34vh,270px)}.joinbar label{min-width:100%}.update-entry{grid-template-columns:76px 1fr}}
