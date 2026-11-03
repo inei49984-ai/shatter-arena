@@ -71,11 +71,11 @@ async function loadModel(id) {
   return cache.get(id);
 }
 function cloneModel(id) { const base = loaded.get(id); return normalizeModel(cloneSkinned(base.scene)); }
-function createAnimator(root, fighterId='soldier') {
+function createAnimator(root, fighterId='soldier', sourceClips=[]) {
   const mixer = new THREE.AnimationMixer(root), basePosition = root.position.clone();
   const baseQuaternion = root.quaternion.clone();
   const wheels=[];
-  root.traverse(node=>{if(/wheel/i.test(node.name)){wheels.push({node,rotation:node.rotation.x});}});
+  root.traverse(node=>{if(/^wheel_[a-z0-9]+_gr$/i.test(node.name)){wheels.push({node,rotation:node.rotation.x});}});
   let wheelPhase=0, activeKind='';
   const clip = (name, times, offsets, rotations) => {
     const positions = offsets.flatMap(v => [basePosition.x+v[0],basePosition.y+v[1],basePosition.z+v[2]]);
@@ -94,7 +94,8 @@ function createAnimator(root, fighterId='soldier') {
     melee:clip('melee',[0,.12,.24,.38,.52],styles.melee,fighterId==='super'?[[0,0,0],[.12,0,-.18],[-.28,0,.12],[.1,0,.08],[0,0,0]]:fighterId==='thomas'?[[0,0,0],[-.08,0,0],[.16,0,0],[-.08,0,0],[0,0,0]]:[[0,0,0],[0,-.22,-.1],[0,.5,.12],[0,-.08,.04],[0,0,0]]),
     skill:clip('skill',[0,.16,.31,.48,.72],styles.skill,fighterId==='super'?[[0,0,0],[.2,0,0],[-.48,0,0],[.28,0,0],[0,0,0]]:fighterId==='thomas'?[[0,0,0],[-.04,0,0],[.12,0,0],[-.1,0,0],[0,0,0]]:[[0,0,0],[-.12,-.4,0],[0,1.8,0],[.06,3.6,0],[0,6.28,0]])
   };
-  const actions = Object.fromEntries(Object.entries(clips).map(([name,c])=>[name,mixer.clipAction(c)]));
+  const imported=new Map(sourceClips.map(c=>[c.name.toLowerCase(),c]));
+  const actions = Object.fromEntries(Object.entries(clips).map(([name,c])=>[name,mixer.clipAction(imported.get(name)||c)]));
   let base=actions.idle, active=null, moving=false;
   base.setLoop(THREE.LoopRepeat,Infinity).play();
   const syncLocomotion = next => {
@@ -128,7 +129,7 @@ for (const item of roster) {
   const r = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true }); r.setPixelRatio(Math.min(devicePixelRatio,1.5)); r.setSize(card.clientWidth,card.clientHeight,false); r.outputColorSpace=THREE.SRGBColorSpace;
   const s = new THREE.Scene(), c = new THREE.PerspectiveCamera(32, card.clientWidth/card.clientHeight, .1, 100); c.position.set(0,1.4,6.3); c.lookAt(0,1,0); addLight(s);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(1.1,48),new THREE.MeshStandardMaterial({color:0x1a2b3b,roughness:.8})); floor.rotation.x=-Math.PI/2; floor.position.y=.015; s.add(floor);
-  loadModel(item.id).then(() => { const m=cloneModel(item.id); m.rotation.y=-.2; m.userData.animator=createAnimator(m,item.id); s.add(m); card.dataset.ready='1'; }).catch(()=> { card.querySelector('.pick').textContent='MODEL ERROR'; });
+  loadModel(item.id).then(() => { const m=cloneModel(item.id); m.rotation.y=-.2; m.userData.animator=createAnimator(m,item.id,loaded.get(item.id).animations); s.add(m); card.dataset.ready='1'; }).catch(()=> { card.querySelector('.pick').textContent='MODEL ERROR'; });
   const preview = {r,s,c,card};
   let last=performance.now();
   const animate = () => { if (!document.body.contains(card)) { r.dispose(); return; } const now=performance.now(),dt=Math.min((now-last)/1000,.05);last=now; const fighter=s.children.find(o=>o.isGroup); if(fighter){fighter.rotation.y+=.003;fighter.userData.animator?.update(dt,false);} r.render(s,c); requestAnimationFrame(animate); };
@@ -152,7 +153,7 @@ function makeEntity(id,p) {
   let model;
   try { model=cloneModel(p.model); } catch { const mesh=new THREE.Mesh(new THREE.CapsuleGeometry(.4,.9,4,8),new THREE.MeshStandardMaterial({color:p.color})); model=new THREE.Group(); model.add(mesh); }
   group.add(model); group.position.set(p.x,0,p.z); group.rotation.y=p.yaw||0;
-  const animator=createAnimator(model,p.model);
+  const animator=createAnimator(model,p.model,loaded.get(p.model)?.animations||[]);
   const ring=new THREE.Mesh(new THREE.RingGeometry(.52,.62,32),new THREE.MeshBasicMaterial({color:p.color,side:THREE.DoubleSide,transparent:true,opacity:.65}));ring.rotation.x=-Math.PI/2;ring.position.y=.03;group.add(ring);
   const bar=new THREE.Group();bar.position.y=2.35;group.add(bar);
   const plate=new THREE.Mesh(new THREE.PlaneGeometry(1.6,.28),new THREE.MeshBasicMaterial({color:0x07101a,transparent:true,opacity:.82,side:THREE.DoubleSide}));bar.add(plate);
