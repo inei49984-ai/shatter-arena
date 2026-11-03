@@ -8,11 +8,38 @@ const MODEL_URL = '/assets/thomas_the_tank_engine.glb';
 const loader = new GLTFLoader();
 const keys = new Set();
 const clock = new THREE.Clock();
-let sourceModel = null, modelPromise = null, game = null, raf = 0, state = 'menu';
+let sourceModel = null, modelPromise = null, game = null, raf = 0, state = 'lobby';
 let elapsed = 0, score = 0, wave = 1, health = 100, spawnIn = 1, ramCooldown = 0, whistleCooldown = 0, whistleTime = 0, damageCooldown = 0, steamTimer = 0;
 let player = null, drones = [], steam = [], arenaRadius = 18, moveTouch = { x: 0, y: 0 }, joystickPointer = null;
+let deviceKey = '', profile = null, lobbyPollTimer = 0;
 const clamp = THREE.MathUtils.clamp;
 const rand = (a,b) => a + Math.random() * (b-a);
+
+function makeThomasFallback(){
+  const train=new THREE.Group();train.userData.baseY=0;train.userData.wheelPivots=[];
+  const blue=new THREE.MeshStandardMaterial({color:0x245b96,roughness:.72}),red=new THREE.MeshStandardMaterial({color:0xa23c33,roughness:.78}),black=new THREE.MeshStandardMaterial({color:0x272b2d,roughness:.83}),metal=new THREE.MeshStandardMaterial({color:0x777c7c,metalness:.3,roughness:.58}),faceMat=new THREE.MeshStandardMaterial({color:0xe1d7bd,roughness:.88}),white=new THREE.MeshStandardMaterial({color:0xf0eee5,roughness:.65});
+  const box=(w,h,d,mat,x,y,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;train.add(m);return m};
+  box(1.24,.24,2.35,red,0,.58,0);
+  box(.98,.97,.87,blue,0,1.25,-.62);box(1.12,.12,.98,red,0,1.79,-.62);
+  const boiler=new THREE.Mesh(new THREE.CylinderGeometry(.46,.46,1.55,24),blue);boiler.rotation.x=Math.PI/2;boiler.position.set(0,1.25,.37);boiler.castShadow=true;train.add(boiler);
+  const nose=new THREE.Mesh(new THREE.CylinderGeometry(.43,.43,.12,24),metal);nose.rotation.x=Math.PI/2;nose.position.set(0,1.25,1.17);train.add(nose);
+  const face=new THREE.Mesh(new THREE.CylinderGeometry(.36,.36,.08,24),faceMat);face.rotation.x=Math.PI/2;face.position.set(0,1.25,1.245);train.add(face);
+  for(const side of [-1,1]){
+    const eye=new THREE.Mesh(new THREE.SphereGeometry(.065,12,10),black);eye.position.set(side*.13,1.32,1.31);train.add(eye);
+    const wheelPivot=new THREE.Group();wheelPivot.position.set(side*.59,.36,-.74);const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.34,.34,.13,20),black);wheel.rotation.z=Math.PI/2;wheel.castShadow=true;wheelPivot.add(wheel);train.add(wheelPivot);train.userData.wheelPivots.push(wheelPivot);
+    const wheel2=new THREE.Mesh(new THREE.CylinderGeometry(.34,.34,.13,20),black);wheel2.rotation.z=Math.PI/2;wheel2.position.set(side*.59,.36,0);train.add(wheel2);train.userData.wheelPivots.push(wheel2);
+    const wheel3=new THREE.Mesh(new THREE.CylinderGeometry(.34,.34,.13,20),black);wheel3.rotation.z=Math.PI/2;wheel3.position.set(side*.59,.36,.74);train.add(wheel3);train.userData.wheelPivots.push(wheel3);
+    const rod=box(.055,.075,1.35,metal,side*.67,.36,0);rod.name='fallbackRod';
+  }
+  const chimney=new THREE.Mesh(new THREE.CylinderGeometry(.12,.18,.42,14),black);chimney.position.set(0,1.98,.78);train.add(chimney);
+  const chimneyLip=new THREE.Mesh(new THREE.CylinderGeometry(.2,.2,.08,14),red);chimneyLip.position.set(0,2.2,.78);train.add(chimneyLip);
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(.19,16,12),new THREE.MeshStandardMaterial({color:0xb79a64,metalness:.26,roughness:.5}));dome.position.set(0,1.72,.12);train.add(dome);
+  const lamp=new THREE.Mesh(new THREE.CylinderGeometry(.13,.13,.1,16),white);lamp.rotation.x=Math.PI/2;lamp.position.set(0,1.78,1.08);train.add(lamp);
+  const bumper=box(.72,.15,.16,black,0,.52,1.25);
+  train.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
+  train.userData.rodGroup=train.children.find(o=>o.name==='fallbackRod')||null;
+  return train;
+}
 
 function configureModel(root) {
   root.updateMatrixWorld(true);
@@ -86,8 +113,15 @@ function makeScene(canvas) {
 
 function createPlayer() {
   const group=new THREE.Group(); group.position.set(0,0,7); group.userData.actor=true;
-  const model=configureModel(cloneSkinned(sourceModel)); group.add(model); game.scene.add(group);
+  const model=sourceModel?configureModel(cloneSkinned(sourceModel)):makeThomasFallback(); group.add(model); game.scene.add(group);
   return {group,model,vx:0,vz:0,yaw:Math.PI,walk:0,bob:0};
+}
+
+function upgradePlayerModel(){
+  if(!player||!sourceModel||player.model.userData.fromAsset)return;
+  const old=player.model,model=configureModel(cloneSkinned(sourceModel));model.userData.fromAsset=true;
+  player.group.remove(old);old.traverse(node=>{if(node.isMesh){node.geometry.dispose();for(const mat of (Array.isArray(node.material)?node.material:[node.material]))mat?.dispose()}});
+  player.group.add(model);player.model=model;
 }
 
 function makeDrone() {
@@ -112,7 +146,7 @@ function puffSteam() {
 async function loadModel() {
   if(sourceModel)return sourceModel;
   if(modelPromise)return modelPromise;
-  modelPromise=loader.loadAsync(MODEL_URL,event=>{const label=$('loadingOverlay').querySelector('p');if(event.lengthComputable&&event.total)label.textContent=`トーマスを読み込み中... ${Math.round(event.loaded/event.total*100)}%`;}).then(gltf=>{sourceModel=gltf.scene;sourceModel.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});return sourceModel;
+  modelPromise=loader.loadAsync(MODEL_URL).then(gltf=>{sourceModel=gltf.scene;sourceModel.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});upgradePlayerModel();$('modelStatus').textContent='Thomas 3D';return sourceModel;
   }).catch(error=>{modelPromise=null;throw error});
   return modelPromise;
 }
@@ -125,14 +159,16 @@ function setupGame() {
   game.controls.mouseButtons.LEFT=THREE.MOUSE.ROTATE;game.controls.mouseButtons.MIDDLE=THREE.MOUSE.DOLLY;game.controls.mouseButtons.RIGHT=THREE.MOUSE.PAN;
   game.controls.touches.ONE=THREE.TOUCH.ROTATE;game.controls.touches.TWO=THREE.TOUCH.DOLLY_PAN;
   game.controls.addEventListener('change',()=>{if(state==='playing'&&player)game.focusOffset.copy(game.controls.target).sub(player.group.position)});
-  player=createPlayer();game.camera.position.set(player.group.position.x,9,player.group.position.z+13);game.controls.target.set(player.group.position.x,1,player.group.position.z);drones=[];steam=[];elapsed=0;score=0;wave=1;health=100;spawnIn=1;ramCooldown=0;whistleCooldown=0;whistleTime=0;damageCooldown=0;steamTimer=0;
-  updateHud();
+  player=createPlayer();player.group.position.set(0,0,0);player.yaw=0;game.camera.position.set(0,8,13);game.controls.target.set(0,1,0);drones=[];steam=[];elapsed=0;score=0;wave=1;health=100;spawnIn=1;ramCooldown=0;whistleCooldown=0;whistleTime=0;damageCooldown=0;steamTimer=0;
+  updateHud();state='lobby';
 }
 
-async function startGame() {
-  if(state==='loading')return;state='loading';$('loadingOverlay').querySelector('p').textContent='ゲームを読み込み中...';$('loadingRetry').classList.add('hidden');$('loadingOverlay').classList.remove('hidden');
-  try {await loadModel();setupGame();$('loadingOverlay').classList.add('hidden');$('resultOverlay').classList.add('hidden');$('pauseOverlay').classList.add('hidden');state='playing';clock.start();raf=requestAnimationFrame(frame);toast('WAVE 1 — トーマス、出発！');}
-  catch(error){console.error('Thomas model failed to load',error);state='menu';$('loadingOverlay').querySelector('p').textContent='ゲームを読み込めませんでした。通信を確認してください。';$('loadingRetry').classList.remove('hidden');}
+function startGame() {
+  if(state==='playing')return;if(!profile){openProfile();return}
+  elapsed=0;score=0;wave=1;health=100;spawnIn=.65;ramCooldown=0;whistleCooldown=0;whistleTime=0;damageCooldown=0;steamTimer=0;
+  for(const drone of drones)game.scene.remove(drone.group);for(const particle of steam){game.scene.remove(particle.mesh);particle.mesh.geometry.dispose();particle.mesh.material.dispose()}drones=[];steam=[];
+  player.group.position.set(0,0,8);player.group.rotation.y=Math.PI;player.yaw=Math.PI;player.vx=0;player.vz=0;player.bob=0;game.focusOffset.set(0,1,0);game.controls.target.set(0,1,8);
+  $('pauseOverlay').classList.add('hidden');$('resultOverlay').classList.add('hidden');$('lobbyScreen').classList.add('hidden');$('gameScreen').classList.add('playing');state='playing';clock.start();updateHud();toast('出発！ ドローンを場外へ！');
 }
 
 function best(){return Number(localStorage.getItem('shatterArenaBest')||0)}
@@ -165,7 +201,12 @@ function damage(amount){if(damageCooldown>0)return;damageCooldown=.6;health=Math
 function finish(){if(state!=='playing')return;state='over';const old=best();if(score>old)localStorage.setItem('shatterArenaBest',String(score));$('resultEyebrow').textContent=score>old?'NEW RECORD // SAVED':'RUN COMPLETE';$('resultTitle').textContent='ENGINE STOPPED';$('resultCopy').textContent=`WAVE ${wave} でトーマスの機関が停止した。`; $('finalScore').textContent=String(score).padStart(5,'0');$('resultOverlay').classList.remove('hidden');}
 
 function frame(){
-  if(state!=='playing')return;raf=requestAnimationFrame(frame);const dt=Math.min(clock.getDelta(),.045);elapsed+=dt;
+  if(!game)return;raf=requestAnimationFrame(frame);const dt=Math.min(clock.getDelta(),.045);
+  if(state==='lobby'){
+    if(player){player.walk+=dt*.45;player.group.rotation.y=Math.sin(performance.now()*.00028)*.11;player.model.position.y=player.model.userData.baseY+Math.sin(player.walk*1.5)*.018;for(const pivot of player.model.userData.wheelPivots||[])pivot.rotation.x+=dt*.16;}
+    game.controls.target.set(player?.group.position.x||0,1,player?.group.position.z||0);game.controls.update();game.renderer.render(game.scene,game.camera);return;
+  }
+  if(state!=='playing'){game.renderer.render(game.scene,game.camera);return}elapsed+=dt;
   const newWave=1+Math.floor(elapsed/18);if(newWave!==wave){wave=newWave;toast(`WAVE ${wave} — 増援接近！`)}
   ramCooldown=Math.max(0,ramCooldown-dt);whistleCooldown=Math.max(0,whistleCooldown-dt);whistleTime=Math.max(0,whistleTime-dt);damageCooldown=Math.max(0,damageCooldown-dt);spawnIn-=dt;
   if(spawnIn<=0){drones.push(makeDrone());spawnIn=Math.max(.34,1.15-wave*.055)*rand(.78,1.18)}
@@ -199,12 +240,70 @@ function frame(){
 }
 
 function pause(){if(state!=='playing')return;state='paused';$('pauseOverlay').classList.remove('hidden')}
-function resume(){if(state!=='paused')return;state='playing';$('pauseOverlay').classList.add('hidden');clock.start();raf=requestAnimationFrame(frame)}
+function resume(){if(state!=='paused')return;state='playing';$('pauseOverlay').classList.add('hidden');clock.start()}
+function returnToLobby(){
+  for(const drone of drones)game.scene.remove(drone.group);for(const p of steam){game.scene.remove(p.mesh);p.mesh.geometry.dispose();p.mesh.material.dispose()}drones=[];steam=[];
+  state='lobby';$('gameScreen').classList.remove('playing');$('lobbyScreen').classList.remove('hidden');$('pauseOverlay').classList.add('hidden');$('resultOverlay').classList.add('hidden');
+  player.group.position.set(0,0,0);player.vx=0;player.vz=0;game.focusOffset.set(0,1,0);game.controls.target.set(0,1,0);clock.start();
+}
 
-$('retryButton').addEventListener('click',startGame);$('resumeButton').addEventListener('click',resume);$('pauseButton').addEventListener('click',pause);$('attackButton').addEventListener('pointerdown',e=>{e.preventDefault();ram(false)});$('dashButton').addEventListener('pointerdown',e=>{e.preventDefault();ram(true)});
-addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();if(e.code==='Escape'){state==='playing'?pause():resume();return}keys.add(e.code);if(e.repeat)return;if(e.code==='Space')ram(false);if(e.code==='KeyQ'||e.code==='ShiftLeft'||e.code==='ShiftRight')ram(true)});addEventListener('keyup',e=>keys.delete(e.code));
+function getDeviceKey(){let key=localStorage.getItem('shatterArenaDeviceKey');if(!key){key=crypto.randomUUID();localStorage.setItem('shatterArenaDeviceKey',key)}return key}
+function readSavedProfile(){try{return JSON.parse(localStorage.getItem('shatterArenaProfile')||'null')}catch{return null}}
+function saveLocalProfile(value){profile=value;localStorage.setItem('shatterArenaProfile',JSON.stringify(value));$('lobbyName').textContent=value.name;$('lobbyId').textContent=`@${value.id}`;$('myId').textContent=`@${value.id}`;$('profileDot').classList.remove('offline')}
+function openProfile(message=''){
+  const saved=profile||readSavedProfile(),suffix=String(Math.floor(1000+Math.random()*9000));
+  $('nameInput').value=saved?.name||`Player${suffix}`;$('playerIdInput').value=saved?.id||`Player_${suffix}`;$('profileMessage').textContent=message;$('profileModal').classList.remove('hidden');
+}
+async function api(path,options={}){
+  const response=await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})},cache:'no-store'});
+  let data={};try{data=await response.json()}catch{}
+  if(!response.ok){const error=new Error(data.error||`通信エラー (${response.status})`);error.status=response.status;throw error}return data;
+}
+async function registerProfile(name,id){return api('/api/profile',{method:'POST',body:JSON.stringify({deviceKey,name,id})})}
+async function initializeProfile(){
+  deviceKey=getDeviceKey();const saved=readSavedProfile();
+  if(saved?.name&&saved?.id){try{const result=await registerProfile(saved.name,saved.id);saveLocalProfile(result.profile);void refreshFriends();return}catch(error){openProfile(error.status===409?error.message:'プロフィールをサーバーへ接続できません。名前とIDはこの端末に保存されています。');return}}
+  openProfile();
+}
+async function submitProfile(event){
+  event.preventDefault();const name=$('nameInput').value.trim(),id=$('playerIdInput').value.trim();$('profileMessage').textContent='確認中...';
+  try{const result=await registerProfile(name,id);saveLocalProfile(result.profile);$('profileModal').classList.add('hidden');$('friendMessage').textContent='';void refreshFriends();}
+  catch(error){if(error.status&&error.status!==409){$('profileMessage').textContent=error.message;return}if(error.status===409){$('profileMessage').textContent=error.message;return}
+    const normalizedId=id;if(!/^[a-z0-9_]{3,16}$/i.test(normalizedId)||Array.from(name).length<2||Array.from(name).length>16){$('profileMessage').textContent='名前は2〜16文字、IDは英数字と _ の3〜16文字です。';return}
+    saveLocalProfile({name,id});$('profileModal').classList.add('hidden');toast('サーバーに接続できません。フレンド機能は一時停止中です。');
+  }
+}
+function renderFriends(friends){
+  const list=$('friendList');list.replaceChildren();$('friendCount').textContent=`${friends.filter(f=>f.online).length} ONLINE`;
+  if(!friends.length){const li=document.createElement('li');li.className='empty-friends';li.textContent='IDを入力してフレンドを追加';list.append(li);return}
+  for(const friend of friends){const li=document.createElement('li');li.className='friend-row';const dot=document.createElement('i');dot.className=`profile-dot${friend.online?'':' offline'}`;const details=document.createElement('span');details.className='friend-details';const name=document.createElement('b');name.textContent=friend.name;const id=document.createElement('small');id.textContent=`@${friend.id} · ${friend.online?'オンライン':'オフライン'}`;details.append(name,id);const remove=document.createElement('button');remove.className='friend-remove';remove.type='button';remove.dataset.removeFriend=friend.id;remove.textContent='削除';li.append(dot,details,remove);list.append(li)}
+}
+async function refreshFriends(){
+  if(!deviceKey||!profile)return;
+  try{const result=await api(`/api/lobby/${encodeURIComponent(deviceKey)}`);saveLocalProfile(result.profile);renderFriends(result.friends)}
+  catch(error){if(error.status===404){try{const result=await registerProfile(profile.name,profile.id);saveLocalProfile(result.profile);return}catch(conflict){$('friendMessage').textContent=conflict.message;return}}$('friendMessage').textContent='フレンド情報に接続できません。'}
+}
+async function addFriend(event){
+  event.preventDefault();const input=$('friendIdInput'),friendId=input.value.trim();if(!friendId)return;
+  try{const result=await api('/api/friends',{method:'POST',body:JSON.stringify({deviceKey,friendId})});input.value='';$('friendMessage').textContent=`${result.friend.name} を追加しました。`;await refreshFriends()}
+  catch(error){$('friendMessage').textContent=error.message}
+}
+async function removeFriend(friendId){
+  try{await api(`/api/friends/${encodeURIComponent(friendId)}`,{method:'DELETE',body:JSON.stringify({deviceKey})});$('friendMessage').textContent='フレンドを削除しました。';await refreshFriends()}
+  catch(error){$('friendMessage').textContent=error.message}
+}
+async function copyMyId(){if(!profile)return;try{await navigator.clipboard.writeText(`@${profile.id}`);$('friendMessage').textContent='IDをコピーしました。'}catch{$('friendMessage').textContent=`あなたのID: @${profile.id}`}}
+function boot(){
+  try{setupGame();$('modelStatus').textContent='Thomasの3Dモデルを準備中';clock.start();raf=requestAnimationFrame(frame);void loadModel().catch(error=>{console.error('Thomas model unavailable; keeping the built-in 3D engine',error);$('modelStatus').textContent='Thomas 3D'});}
+  catch(error){console.error('3D scene could not start',error);$('modelStatus').textContent='3D画面を起動できません。WebGL対応ブラウザーを使ってください。';}
+  void initializeProfile();
+}
+
+$('playButton').addEventListener('click',startGame);$('editProfileButton').addEventListener('click',()=>openProfile());$('profileForm').addEventListener('submit',submitProfile);$('closeProfileButton').addEventListener('click',()=>$('profileModal').classList.add('hidden'));$('addFriendForm').addEventListener('submit',addFriend);$('friendList').addEventListener('click',event=>{const button=event.target.closest('[data-remove-friend]');if(button)void removeFriend(button.dataset.removeFriend)});$('copyIdButton').addEventListener('click',copyMyId);$('retryButton').addEventListener('click',startGame);$('resumeButton').addEventListener('click',resume);$('pauseButton').addEventListener('click',pause);$('leaveButton').addEventListener('click',returnToLobby);$('resultLobbyButton').addEventListener('click',returnToLobby);$('attackButton').addEventListener('pointerdown',e=>{e.preventDefault();ram(false)});$('dashButton').addEventListener('pointerdown',e=>{e.preventDefault();ram(true)});
+addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();if(e.code==='Escape'){if(state==='playing')pause();else if(state==='paused')resume();return}keys.add(e.code);if(e.repeat)return;if(e.code==='Space')ram(false);if(e.code==='KeyQ'||e.code==='ShiftLeft'||e.code==='ShiftRight')ram(true)});addEventListener('keyup',e=>keys.delete(e.code));
+setInterval(()=>void refreshFriends(),15000);
 const joystick=$('joystick'),stick=$('stick');joystick.addEventListener('pointerdown',e=>{joystickPointer=e.pointerId;joystick.setPointerCapture(e.pointerId);moveStick(e)});joystick.addEventListener('pointermove',e=>{if(e.pointerId===joystickPointer)moveStick(e)});
 function moveStick(e){const r=joystick.getBoundingClientRect(),dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),len=Math.hypot(dx,dy),s=Math.min(1,len/38);moveTouch={x:len?dx/len*s:0,y:len?dy/len*s:0};stick.style.transform=`translate(${moveTouch.x*34}px,${moveTouch.y*34}px)`}
 function clearStick(){joystickPointer=null;moveTouch={x:0,y:0};stick.style.transform=''}joystick.addEventListener('pointerup',clearStick);joystick.addEventListener('pointercancel',clearStick);
 addEventListener('resize',()=>{if(game){const w=$('gameCanvas').clientWidth||innerWidth,h=$('gameCanvas').clientHeight||innerHeight;game.camera.aspect=w/Math.max(1,h);game.camera.updateProjectionMatrix();game.renderer.setSize(w,h,false);game.renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));game.controls.update()}});
-startGame();
+boot();
