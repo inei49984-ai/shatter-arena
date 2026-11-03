@@ -1,5 +1,11 @@
 [
   {
+    "version": "v2.0.0",
+    "date": "2026-11-03",
+    "title": "THOMAS: KNOCKBACK EXPRESS",
+    "summary": "トーマスを運転してSoldierとSuper Humanを場外へ飛ばす一人用ゲームに変更。車輪の中心軸回転、体当たり、汽笛ブースト、効果音、オリジナルBGM、日本語音声を追加しました。"
+  },
+  {
     "version": "v1.8.0",
     "date": "2026-11-03",
     "title": "関節アニメーションアップデート",
