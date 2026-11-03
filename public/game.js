@@ -10,6 +10,7 @@ const roster = [
 const loader = new GLTFLoader();
 const cache = new Map(), loaded = new Map();
 let chosen = roster[0].id, socket, selfId, scene, camera, renderer, clock, entities = new Map(), effects = [], running = false, yaw = 0;
+let cameraYaw=0,cameraPitch=.28,cameraDistance=7.5,cameraDragging=false,lastPointerX=0,lastPointerY=0,meleeReadyAt=0,skillReadyAt=0;
 const keys = new Set();
 const $ = (id) => document.getElementById(id);
 const lobby = $('lobby'), game = $('game'), loading = $('loading');
@@ -65,6 +66,42 @@ async function loadModel(id) {
   return cache.get(id);
 }
 function cloneModel(id) { const base = loaded.get(id); return normalizeModel(cloneSkinned(base.scene)); }
+function createAnimator(root) {
+  const mixer = new THREE.AnimationMixer(root), basePosition = root.position.clone();
+  const baseQuaternion = root.quaternion.clone();
+  const clip = (name, times, offsets, lean) => {
+    const positions = offsets.flatMap(v => [basePosition.x+v[0],basePosition.y+v[1],basePosition.z+v[2]]);
+    const rotations = lean.flatMap(v => { const q=baseQuaternion.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),v)); return [q.x,q.y,q.z,q.w]; });
+    return new THREE.AnimationClip(name,-1,[new THREE.VectorKeyframeTrack('.position',times,positions),new THREE.QuaternionKeyframeTrack('.quaternion',times,rotations)]);
+  };
+  const clips = {
+    idle:clip('idle',[0,.5,1],[[0,0,0],[0,.025,0],[0,0,0]],[0,.01,0]),
+    run:clip('run',[0,.25,.5,.75,1],[[0,0,0],[0,.075,.04],[0,0,0],[0,.075,-.04],[0,0,0]],[0,.035,0,-.035,0]),
+    melee:clip('melee',[0,.11,.23,.42],[[0,0,0],[0,.04,.2],[0,-.02,.11],[0,0,0]],[0,-.42,.2,0]),
+    skill:clip('skill',[0,.18,.34,.62],[[0,0,0],[0,.1,.25],[0,.02,.58],[0,0,0]],[0,-.5,.28,0])
+  };
+  const actions = Object.fromEntries(Object.entries(clips).map(([name,c])=>[name,mixer.clipAction(c)]));
+  let base=actions.idle, active=null, moving=false;
+  base.setLoop(THREE.LoopRepeat,Infinity).play();
+  const syncLocomotion = next => {
+    moving=next;
+    if(active)return;
+    const target=next?actions.run:actions.idle; if(target===base)return;
+    target.reset().play(); base.crossFadeTo(target,.18,false); base=target;
+  };
+  mixer.addEventListener('finished',event=>{
+    if(event.action!==active)return;
+    active.stop(); active=null; base= moving?actions.run:actions.idle; base.reset().fadeIn(.12).play();
+  });
+  return {
+    update(dt,isMoving){ syncLocomotion(isMoving); mixer.update(dt); },
+    play(kind){
+      if(active)active.stop();
+      base.fadeOut(.06);
+      active=actions[kind]||actions.melee; active.reset(); active.setLoop(THREE.LoopOnce,1); active.clampWhenFinished=true; active.fadeIn(.05).play();
+    }
+  };
+}
 
 // Lightweight, independently rendered model cards.
 const cards = $('cards');
@@ -77,9 +114,10 @@ for (const item of roster) {
   const r = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true }); r.setPixelRatio(Math.min(devicePixelRatio,1.5)); r.setSize(card.clientWidth,card.clientHeight,false); r.outputColorSpace=THREE.SRGBColorSpace;
   const s = new THREE.Scene(), c = new THREE.PerspectiveCamera(32, card.clientWidth/card.clientHeight, .1, 100); c.position.set(0,1.4,6.3); c.lookAt(0,1,0); addLight(s);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(1.1,48),new THREE.MeshStandardMaterial({color:0x1a2b3b,roughness:.8})); floor.rotation.x=-Math.PI/2; floor.position.y=.015; s.add(floor);
-  loadModel(item.id).then(() => { const m=cloneModel(item.id); m.rotation.y=-.2; s.add(m); card.dataset.ready='1'; }).catch(()=> { card.querySelector('.pick').textContent='MODEL ERROR'; });
+  loadModel(item.id).then(() => { const m=cloneModel(item.id); m.rotation.y=-.2; m.userData.animator=createAnimator(m); s.add(m); card.dataset.ready='1'; }).catch(()=> { card.querySelector('.pick').textContent='MODEL ERROR'; });
   const preview = {r,s,c,card};
-  const animate = () => { if (!document.body.contains(card)) { r.dispose(); return; } const m=s.children.find(o=>o.userData?.fighter); const fighter=s.children.find(o=>o.isGroup); if(fighter && card.dataset.id!==chosen) fighter.rotation.y += .002; if(fighter && card.dataset.id===chosen) fighter.rotation.y += .003; r.render(s,c); requestAnimationFrame(animate); };
+  let last=performance.now();
+  const animate = () => { if (!document.body.contains(card)) { r.dispose(); return; } const now=performance.now(),dt=Math.min((now-last)/1000,.05);last=now; const fighter=s.children.find(o=>o.isGroup); if(fighter){fighter.rotation.y+=.003;fighter.userData.animator?.update(dt,false);} r.render(s,c); requestAnimationFrame(animate); };
   requestAnimationFrame(animate);
   new ResizeObserver(() => { const w=card.clientWidth,h=card.clientHeight; r.setSize(w,h,false); c.aspect=w/h; c.updateProjectionMatrix(); }).observe(card);
 }
@@ -100,11 +138,12 @@ function makeEntity(id,p) {
   let model;
   try { model=cloneModel(p.model); } catch { const mesh=new THREE.Mesh(new THREE.CapsuleGeometry(.4,.9,4,8),new THREE.MeshStandardMaterial({color:p.color})); model=new THREE.Group(); model.add(mesh); }
   group.add(model); group.position.set(p.x,0,p.z); group.rotation.y=p.yaw||0;
+  const animator=createAnimator(model);
   const ring=new THREE.Mesh(new THREE.RingGeometry(.52,.62,32),new THREE.MeshBasicMaterial({color:p.color,side:THREE.DoubleSide,transparent:true,opacity:.65}));ring.rotation.x=-Math.PI/2;ring.position.y=.03;group.add(ring);
   const bar=new THREE.Group();bar.position.y=2.35;group.add(bar);
   const plate=new THREE.Mesh(new THREE.PlaneGeometry(1.6,.28),new THREE.MeshBasicMaterial({color:0x07101a,transparent:true,opacity:.82,side:THREE.DoubleSide}));bar.add(plate);
   const fill=new THREE.Mesh(new THREE.PlaneGeometry(1.48,.11),new THREE.MeshBasicMaterial({color:p.color,side:THREE.DoubleSide}));fill.position.z=.01; bar.add(fill); bar.userData.fill=fill;
-  scene.add(group); entities.set(id,{group,bar,fill,model,p}); return entities.get(id);
+  scene.add(group); entities.set(id,{group,bar,fill,model,animator,p}); return entities.get(id);
 }
 function updatePlayers(state) {
   for(const [id,p] of Object.entries(state)) {
@@ -123,16 +162,39 @@ function makeShot(x,z,angle,color=0x8ef0ff) {
   const from=new THREE.Vector3(x,.95,z), to=new THREE.Vector3(x+Math.sin(angle)*15,.95,z+Math.cos(angle)*15);
   const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([from,to]),new THREE.LineBasicMaterial({color,transparent:true,opacity:.9}));scene.add(line);effects.push({line,t:0});
 }
+function makeCombatFx(x,z,angle,type) {
+  const skill=type==='skill', group=new THREE.Group();
+  group.position.set(x+Math.sin(angle)*(skill?1.75:.9),.12,z+Math.cos(angle)*(skill?1.75:.9)); group.rotation.y=angle;
+  const geometry=new THREE.TorusGeometry(skill ? 1.55 : .9,skill ? .13 : .075,8,36,Math.PI*.92);
+  const material=new THREE.MeshBasicMaterial({color:skill?0x8d79ff:0x76eaff,transparent:true,opacity:.95,side:THREE.DoubleSide});
+  const arc=new THREE.Mesh(geometry,material); arc.rotation.x=Math.PI/2; arc.position.y=.9; group.add(arc); scene.add(group);
+  effects.push({group,material,t:0,duration:skill ? .58 : .34,combat:true});
+}
+function performAttack(type) {
+  if(!running||!socket)return;
+  const now=performance.now(),readyAt=type==='skill'?skillReadyAt:meleeReadyAt;
+  if(now<readyAt){toast(type==='skill'?'技はクールダウン中':'近接攻撃はクールダウン中');return;}
+  const me=entities.get(selfId); if(!me)return;
+  const cooldown=type==='skill'?6500:620;
+  if(type==='skill')skillReadyAt=now+cooldown;else meleeReadyAt=now+cooldown;
+  yaw=cameraYaw; me.group.rotation.y=yaw; me.animator.play(type);
+  makeCombatFx(me.group.position.x,me.group.position.z,yaw,type);
+  socket.emit(type==='skill'?'skill':'melee',{yaw});
+}
 function frame() {
   if(!running)return; requestAnimationFrame(frame); const dt=Math.min(clock.getDelta(),.05), me=entities.get(selfId);
   if(me){
+    yaw=cameraYaw; me.group.rotation.y=yaw;
     const speed=7.2; let f=0,s=0; if(keys.has('KeyW'))f++;if(keys.has('KeyS'))f--;if(keys.has('KeyD'))s++;if(keys.has('KeyA'))s--;
     if(f||s){const len=Math.hypot(f,s);f/=len;s/=len;me.group.position.x+= (Math.sin(yaw)*f-Math.cos(yaw)*s)*speed*dt;me.group.position.z+= (Math.cos(yaw)*f+Math.sin(yaw)*s)*speed*dt;me.group.position.x=THREE.MathUtils.clamp(me.group.position.x,-18.7,18.7);me.group.position.z=THREE.MathUtils.clamp(me.group.position.z,-18.7,18.7);me.group.rotation.y=yaw;}
+    me.animator.update(dt,Boolean(f||s));
     me.bar.lookAt(camera.position);
     socket.emit('move',{x:me.group.position.x,z:me.group.position.z,yaw});
-    const camDist=7.5, target=new THREE.Vector3(me.group.position.x-Math.sin(yaw)*camDist,4.1,me.group.position.z-Math.cos(yaw)*camDist); camera.position.lerp(target,1-Math.exp(-dt*6)); camera.lookAt(me.group.position.x,1.1,me.group.position.z);
+    const horizontal=cameraDistance*Math.cos(cameraPitch), target=new THREE.Vector3(me.group.position.x-Math.sin(cameraYaw)*horizontal,1.1+cameraDistance*Math.sin(cameraPitch),me.group.position.z-Math.cos(cameraYaw)*horizontal); camera.position.lerp(target,1-Math.exp(-dt*6)); camera.lookAt(me.group.position.x,1.05,me.group.position.z);
+    const remaining=Math.max(0,skillReadyAt-performance.now()); $('skillCooldown').textContent=remaining>0?`Q ${ (remaining/1000).toFixed(1) }s`:'Q READY'; $('skillCooldown').classList.toggle('ready',remaining<=0);
   }
-  for(const fx of effects){fx.t+=dt;fx.line.material.opacity=Math.max(0,1-fx.t/.18);if(fx.t>.18){scene.remove(fx.line);fx.line.geometry.dispose();fx.line.material.dispose();}} effects=effects.filter(x=>x.t<=.18);
+  const now=performance.now(); for(const [id,remote] of entities)if(id!==selfId){remote.animator.update(dt,remote.movingUntil>now);remote.bar.lookAt(camera.position);}
+  for(const fx of effects){fx.t+=dt;if(fx.combat){const progress=Math.min(1,fx.t/fx.duration);fx.group.scale.setScalar(.72+progress*.85);fx.material.opacity=1-progress;if(progress>=1){scene.remove(fx.group);fx.group.children[0].geometry.dispose();fx.material.dispose();}}else{fx.line.material.opacity=Math.max(0,1-fx.t/.18);if(fx.t>.18){scene.remove(fx.line);fx.line.geometry.dispose();fx.line.material.dispose();}}} effects=effects.filter(x=>x.combat?x.t<x.duration:x.t<=.18);
   renderer.render(scene,camera);
 }
 async function join() {
@@ -144,9 +206,11 @@ async function join() {
   let joinSent=false;
   socket.on('connect',()=>{if(joinSent)return;joinSent=true;socket.timeout(10000).emit('join',{model:chosen,name:$('playerName').value,room:$('roomCode').value},(err,res)=>{
     if(err||!res?.ok){toast(res?.error||(err?'サーバーの応答がタイムアウトしました':'接続に失敗しました'));socket.disconnect();resetJoin();return;}
-    selfId=res.id; $('roomLabel').textContent=res.code; lobby.classList.add('hidden'); game.classList.remove('hidden');loading.classList.add('hidden'); arena(); yaw=0; running=true;
-    socket.on('state',updatePlayers); socket.on('move',p=>{const e=entities.get(p.id);if(e){e.group.position.set(p.x,0,p.z);e.group.rotation.y=p.yaw;}});
-    socket.on('feed',toast); socket.on('shot',p=>makeShot(p.x,p.z,p.yaw,0xffc36a)); socket.on('hit',p=>{if(p.to===selfId)toast('被弾！');if(p.from===selfId)toast('HIT!');}); frame();
+    selfId=res.id; $('roomLabel').textContent=res.code; lobby.classList.add('hidden'); game.classList.remove('hidden');loading.classList.add('hidden'); arena(); yaw=0;cameraYaw=0;cameraPitch=.28;cameraDistance=7.5;meleeReadyAt=0;skillReadyAt=0;running=true;
+    socket.on('state',updatePlayers); socket.on('move',p=>{const e=entities.get(p.id);if(e){e.group.position.set(p.x,0,p.z);e.group.rotation.y=p.yaw;e.movingUntil=performance.now()+140;}});
+    socket.on('feed',toast); socket.on('shot',p=>makeShot(p.x,p.z,p.yaw,0xffc36a)); socket.on('hit',p=>{if(p.to===selfId)toast('被弾！');if(p.from===selfId)toast('HIT!');});
+    socket.on('combat',data=>{const e=entities.get(data.id);if(e){e.group.rotation.y=data.yaw;e.animator.play(data.type);makeCombatFx(e.group.position.x,e.group.position.z,data.yaw,data.type);}if(data.hitIds?.includes(selfId))toast(data.type==='skill'?'衝撃波を受けた！':'近接攻撃を受けた！');}); frame();
+    socket.on('combatResult',result=>{if(result.hitIds?.length)toast(result.type==='skill'?'衝撃波 HIT!':'近接 HIT!');});
   });});
   socket.on('connect_error',()=>{toast('サーバーに接続できません。サーバー画面で npm.cmd start が動いているか確認してください');socket.disconnect();resetJoin();});
   socket.connect();
@@ -154,7 +218,13 @@ async function join() {
 function leave(){running=false;if(socket){socket.disconnect();socket=null;}if(renderer){renderer.dispose();renderer=null;}entities.clear();effects=[];game.classList.add('hidden');lobby.classList.remove('hidden');$('joinBtn').disabled=false;$('joinBtn').innerHTML='アリーナに入る <span>→</span>';document.exitPointerLock?.();}
 $('joinBtn').addEventListener('click',join); $('leaveBtn').addEventListener('click',leave);
 $('copyRoom').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('roomLabel').textContent);toast('部屋コードをコピーしました');}catch{toast($('roomLabel').textContent);}});
-window.addEventListener('keydown',e=>{keys.add(e.code);if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();}); window.addEventListener('keyup',e=>keys.delete(e.code));
-window.addEventListener('mousemove',e=>{if(document.pointerLockElement===$('world'))yaw-=e.movementX*.0024;});
-$('world').addEventListener('click',()=>{if(!running)return;$('world').requestPointerLock?.();socket.emit('shoot',{yaw});const me=entities.get(selfId);if(me)makeShot(me.group.position.x,me.group.position.z,yaw);});
+window.addEventListener('keyup',e=>keys.delete(e.code));
+const worldCanvas=$('world');
+worldCanvas.addEventListener('pointerdown',e=>{if(e.button===2&&running){cameraDragging=true;lastPointerX=e.clientX;lastPointerY=e.clientY;e.preventDefault();}});
+window.addEventListener('pointerup',()=>{cameraDragging=false;});
+worldCanvas.addEventListener('contextmenu',e=>e.preventDefault());
+window.addEventListener('pointermove',e=>{if(!cameraDragging)return;cameraYaw-=(e.clientX-lastPointerX)*.006;cameraPitch=THREE.MathUtils.clamp(cameraPitch-(e.clientY-lastPointerY)*.004,.12,.82);lastPointerX=e.clientX;lastPointerY=e.clientY;});
+worldCanvas.addEventListener('wheel',e=>{if(!running)return;e.preventDefault();cameraDistance=THREE.MathUtils.clamp(cameraDistance+Math.sign(e.deltaY)*.7,4.5,12);},{passive:false});
+worldCanvas.addEventListener('click',e=>{if(e.button===0)performAttack('melee');});
+window.addEventListener('keydown',e=>{if(e.repeat)return;keys.add(e.code);if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();if(e.code==='KeyF')performAttack('melee');if(e.code==='KeyQ')performAttack('skill');});
 window.addEventListener('resize',()=>{if(renderer&&camera){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);}});

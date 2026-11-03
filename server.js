@@ -117,7 +117,7 @@ io.on('connection', (socket) => {
     if (room.players.size >= 12) return ack({ ok: false, error: 'この部屋は満員です（最大12人）' });
     const model = models.has(payload.model) ? payload.model : 'soldier';
     const idx = room.players.size;
-    const player = { name: cleanName(payload.name), model, x: Math.cos(idx * 1.7) * 5, z: Math.sin(idx * 1.7) * 5, yaw: 0, hp: 100, score: 0, color: ['#70e1ff','#ffb35c','#ce8aff','#ff718b','#93f18d'][idx % 5], lastMove: 0, lastShot: 0 };
+    const player = { name: cleanName(payload.name), model, x: Math.cos(idx * 1.7) * 5, z: Math.sin(idx * 1.7) * 5, yaw: 0, hp: 100, score: 0, color: ['#70e1ff','#ffb35c','#ce8aff','#ff718b','#93f18d'][idx % 5], lastMove: 0, lastShot: 0, lastMelee: 0, lastSkill: 0 };
     room.players.set(socket.id, player); socket.data.room = code;
     socket.join(code); ack({ ok: true, id: socket.id, code }); broadcast(room);
     socket.to(code).emit('feed', `${player.name} が参戦`);
@@ -150,6 +150,28 @@ io.on('connection', (socket) => {
     }
     socket.to(room.code).emit('shot', { id: socket.id, yaw, x: me.x, z: me.z });
   });
+
+  function combat(type, p = {}) {
+    const room=rooms.get(socket.data.room), me=room?.players.get(socket.id); if(!me)return;
+    const now=Date.now(), skill=type==='skill', cooldown=skill?6500:620;
+    const last=skill?'lastSkill':'lastMelee'; if(now-me[last]<cooldown)return; me[last]=now;
+    const aim=Number.isFinite(p.yaw)?p.yaw:me.yaw, range=skill?6.2:2.7, halfAngle=skill ? 0.92 : 0.78, damage=skill?48:32, hitIds=[];
+    for(const [id,target] of room.players){
+      if(id===socket.id||target.hp<=0)continue;
+      const dx=target.x-me.x,dz=target.z-me.z,dist=Math.hypot(dx,dz); if(dist>range)continue;
+      const direction=Math.atan2(dx,dz),delta=Math.atan2(Math.sin(direction-aim),Math.cos(direction-aim));
+      if(Math.abs(delta)>halfAngle)continue;
+      target.hp=Math.max(0,target.hp-damage); hitIds.push(id);
+      if(skill&&dist>0){target.x=Math.max(-18,Math.min(18,target.x+dx/dist*1.1));target.z=Math.max(-18,Math.min(18,target.z+dz/dist*1.1));}
+      if(target.hp===0){me.score++;io.to(room.code).emit('feed',`${me.name} が ${target.name} を撃破`);target.hp=100;target.x=-target.x*.6;target.z=-target.z*.6;}
+    }
+    me.yaw=aim;
+    if(hitIds.length)broadcast(room);
+    socket.emit('combatResult',{type,hitIds});
+    socket.to(room.code).emit('combat',{id:socket.id,type,yaw:aim,hitIds});
+  }
+  socket.on('melee',p=>combat('melee',p));
+  socket.on('skill',p=>combat('skill',p));
 
   socket.on('disconnect', () => {
     const code = socket.data.room; const room = rooms.get(code); if (!room) return;
