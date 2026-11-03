@@ -34,6 +34,10 @@ checkForUpdates(); setInterval(checkForUpdates, 5*60*1000);
 $('dismissUpdate').addEventListener('click',()=>updateBanner.classList.add('hidden'));
 $('copyAddress').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('networkAddress').textContent);$('copyAddress').textContent='コピーしました';setTimeout(()=>$('copyAddress').textContent='URLをコピー',1600);}catch{toast($('networkAddress').textContent);}});
 fetch('/network',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(data=>{if(data?.urls?.length){$('networkAddress').textContent=data.urls[0];$('networkShare').classList.remove('hidden');}}).catch(()=>{});
+fetch('/updates.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('更新履歴を取得できません');return r.json();}).then(entries=>{
+  const list=$('updateLogEntries'); list.replaceChildren();
+  for(const entry of entries){const item=document.createElement('article');item.className='update-entry';const meta=document.createElement('span');meta.className='update-entry-meta';meta.textContent=`${entry.version} · ${entry.date}`;const copy=document.createElement('div');const title=document.createElement('b');title.textContent=entry.title;const summary=document.createElement('p');summary.textContent=entry.summary;copy.append(title,summary);item.append(meta,copy);list.append(item);}
+}).catch(()=>{$('updateLogEntries').innerHTML='<p>更新履歴を読み込めませんでした。</p>';});
 $('updateButton').addEventListener('click', async()=>{
   const button=$('updateButton'), message=$('updateMessage'); button.disabled=true; message.textContent='アップデートを取得・適用しています...';
   try {
@@ -69,6 +73,9 @@ function cloneModel(id) { const base = loaded.get(id); return normalizeModel(clo
 function createAnimator(root) {
   const mixer = new THREE.AnimationMixer(root), basePosition = root.position.clone();
   const baseQuaternion = root.quaternion.clone();
+  const wheels=[];
+  root.traverse(node=>{if(/wheel/i.test(node.name)){wheels.push({node,rotation:node.rotation.x});}});
+  let wheelPhase=0;
   const clip = (name, times, offsets, lean) => {
     const positions = offsets.flatMap(v => [basePosition.x+v[0],basePosition.y+v[1],basePosition.z+v[2]]);
     const rotations = lean.flatMap(v => { const q=baseQuaternion.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),v)); return [q.x,q.y,q.z,q.w]; });
@@ -94,7 +101,7 @@ function createAnimator(root) {
     active.stop(); active=null; base= moving?actions.run:actions.idle; base.reset().fadeIn(.12).play();
   });
   return {
-    update(dt,isMoving){ syncLocomotion(isMoving); mixer.update(dt); },
+    update(dt,isMoving){ syncLocomotion(isMoving); mixer.update(dt); if(isMoving){wheelPhase+=dt*7;for(const wheel of wheels)wheel.node.rotation.x=wheel.rotation+wheelPhase;} },
     play(kind){
       if(active)active.stop();
       base.fadeOut(.06);
