@@ -1,15 +1,17 @@
-# SHATTER ARENA — LAST STAND
+# SHATTER ARENA — THOMAS: FULL STEAM
 
-ネオンのアリーナでドローンの波を撃退し、コアを守るシングルプレイヤーのサバイバルゲームです。ウェーブが進むにつれて敵の数と速度が上がり、重装ドローンも出現します。ベストスコアはブラウザーに保存されます。
+Thomasを運転し、ドローンの群れを体当たりでアリーナの外へ吹き飛ばす3Dサバイバルゲームです。ホイールと連結ロッドの回転、走行に合わせた車体の揺れ、煙突から出る蒸気をリアルタイムで動かします。ウェーブが進むほど敵が速くなり、重装ドローンも出現します。ハイスコアはブラウザーに保存されます。
 
 ## 操作
 
-- W / A / S / D または矢印キー: 移動
-- マウス: 照準
-- マウス左ボタンを押し続ける: 射撃
-- Shift: ダッシュ（クールダウンあり）
+- W / A / S / D または矢印キー: カメラ方向を基準に走行
+- マウス左ドラッグ: カメラを回転
+- マウス右ドラッグ: カメラをパン
+- マウスホイール: カメラをズーム
+- Space: 前方へ体当たり
+- Q または Shift: 汽笛ブースト
 - Esc: 一時停止
-- スマートフォン: 左のスティックで移動、右下のボタンでダッシュ。画面をタップして照準と射撃
+- スマートフォン: 左スティックで走行、1本指ドラッグでカメラ回転、画面上の RAM / WHISTLE ボタンで攻撃
 
 ## 起動
 
@@ -20,4 +22,8 @@ npm install
 npm start
 ```
 
-ブラウザーで `http://localhost:3000` を開きます。Render用の設定は `render.yaml` にあります。GitHubへ変更をpushすると、接続済みのRenderサービスはその設定に従ってデプロイします。
+`http://localhost:3000` を開きます。Three.jsのモジュールはjsDelivrから読み込みます。Render用の設定は `render.yaml` にあり、GitHubへpushすると接続済みのRenderサービスがデプロイします。
+
+## 3Dモデルのクレジット
+
+「Thomas The Tank Engine」 by Thomasxsonic, [Sketchfab](https://sketchfab.com/3d-models/thomas-the-tank-engine-a0a5d05905134036af684ac1254a75ea), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

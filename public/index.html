@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#080b12">
-  <meta name="description" content="ネオンのアリーナを駆け抜け、ドローンの波を撃退するサバイバルゲーム。">
-  <title>SHATTER ARENA — LAST STAND</title>
+  <meta name="description" content="トーマスを運転してネオンアリーナを駆け抜け、ドローンを場外へ吹き飛ばせ。">
+  <title>SHATTER ARENA — THOMAS: FULL STEAM</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
@@ -15,26 +15,28 @@
     <header class="topbar"><a class="wordmark" href="#top"><span class="mark">✳</span> SHATTER <b>ARENA</b></a><span class="build-tag"><i></i> ARCADE SYSTEM / 01</span></header>
     <section id="startScreen" class="screen start-screen">
       <div class="hero">
-        <div class="hero-copy"><p class="eyebrow">THE GRID IS FALLING</p><h1>最後まで、<br><em>立っていろ。</em></h1><p class="intro">アリーナに押し寄せるドローンを撃退し、コアを守り抜け。<br>ウェーブが進むほど敵は速く、手強くなる。</p>
-          <button id="startButton" class="primary-button">戦闘開始 <span>↗</span></button>
+        <div class="hero-copy"><p class="eyebrow">FULL STEAM. FULL IMPACT.</p><h1>トーマス、<br><em>出発進行！</em></h1><p class="intro">自由にカメラを回し、ドローンを体当たりで場外へ。<br>ウェーブが進むほど敵は速く、手強くなる。</p>
+          <button id="startButton" class="primary-button">ゲームスタート <span>↗</span></button><p id="assetStatus" class="asset-status">トーマスを読み込み中...</p>
           <div class="best-line">BEST RUN <b id="bestScore">0</b><span>POINTS</span></div>
         </div>
-        <div class="arena-art" aria-hidden="true"><div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="core"><div class="core-inner">✳</div></div><div class="art-label label-one">CORE // 01</div><div class="art-label label-two">THREAT DETECTED</div><div class="art-cross">+</div></div>
+        <div class="arena-art"><canvas id="heroCanvas" aria-label="トーマスの3Dモデル"></canvas><div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="art-label label-one">THOMAS // 01</div><div class="art-label label-two">FULL STEAM</div></div>
       </div>
-      <div class="briefing"><div class="section-label">MISSION BRIEF <span>— 01</span></div><div class="brief-grid"><article><span class="key">W A S D</span><b>移動</b><p>アリーナ内を自由に移動</p></article><article><span class="key">マウス</span><b>狙う・撃つ</b><p>ポインター方向へ自動射撃</p></article><article><span class="key">SHIFT</span><b>ダッシュ</b><p>短い無敵時間で敵を抜ける</p></article></div></div>
-      <footer><span>SHATTER ARENA <i>●</i> SINGLE PLAYER</span><span>PC / MOBILE READY</span></footer>
+      <div class="briefing"><div class="section-label">MISSION BRIEF <span>— 01</span></div><div class="brief-grid"><article><span class="key">W A S D</span><b>走行</b><p>アリーナを自由に駆け回る</p></article><article><span class="key">ドラッグ</span><b>カメラ</b><p>ドラッグで回転、ホイールでズーム</p></article><article><span class="key">SPACE / Q</span><b>体当たり / 汽笛ブースト</b><p>敵を場外へ吹き飛ばそう</p></article></div></div>
+      <footer><span>SHATTER ARENA <i>●</i> THOMAS ARCADE</span><span>PC / MOBILE READY</span></footer>
     </section>
     <section id="gameScreen" class="screen game-screen hidden" aria-label="ゲーム画面">
       <canvas id="gameCanvas" aria-label="アリーナ"></canvas>
       <div class="game-top"><a class="wordmark" href="#top"><span class="mark">✳</span> SHATTER <b>ARENA</b></a><div class="wave-badge">WAVE <b id="waveValue">1</b></div><div class="score-badge">SCORE <b id="scoreValue">00000</b></div><button id="pauseButton" class="icon-button" aria-label="一時停止">Ⅱ</button></div>
-      <div class="hud-left"><span>CORE INTEGRITY</span><div class="meter"><i id="healthBar"></i></div><b id="healthValue">100%</b></div>
+      <div class="hud-left"><span>ENGINE INTEGRITY</span><div class="meter"><i id="healthBar"></i></div><b id="healthValue">100%</b></div>
       <div class="hud-right"><span>THREATS REMAINING</span><b id="enemyValue">0</b></div>
       <div id="toast" class="toast"></div>
+      <div id="loadingOverlay" class="overlay hidden"><p class="eyebrow">FULL STEAM</p><h2>ステージ準備中</h2><p>トーマスが出発します...</p></div>
       <div id="pauseOverlay" class="overlay hidden"><p class="eyebrow">SYSTEM PAUSED</p><h2>一時停止</h2><button id="resumeButton" class="primary-button">戦闘に戻る <span>↗</span></button><button id="quitButton" class="text-button">アリーナを離れる</button></div>
       <div id="resultOverlay" class="overlay hidden"><p id="resultEyebrow" class="eyebrow">RUN COMPLETE</p><h2 id="resultTitle">CORE LOST</h2><p id="resultCopy">コアが破壊された。</p><div class="result-score"><span>FINAL SCORE</span><b id="finalScore">00000</b></div><button id="retryButton" class="primary-button">もう一度挑戦 <span>↻</span></button><button id="resultHomeButton" class="text-button">タイトルへ戻る</button></div>
-      <div class="mobile-controls"><div id="joystick" class="joystick"><div id="stick" class="stick"></div></div><button id="dashButton" class="dash-button">DASH <span>↗</span></button></div>
+      <div class="mobile-controls"><div id="joystick" class="joystick"><div id="stick" class="stick"></div></div><button id="attackButton" class="attack-button">RAM <span>✳</span></button><button id="dashButton" class="dash-button">WHISTLE <span>♫</span></button></div>
     </section>
   </main>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}</script>
   <script type="module" src="/game.js"></script>
 </body>
 </html>
