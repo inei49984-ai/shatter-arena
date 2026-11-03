@@ -20,16 +20,25 @@ function isNewer(a,b) { const x=versionParts(a), y=versionParts(b); for(let i=0;
 async function checkForUpdates() {
   try {
     const local = await fetch('/version', {cache:'no-store'}); if(!local.ok) return;
-    const {version} = await local.json();
+    const {version,canSelfUpdate} = await local.json();
     if(localVersion && version!==localVersion && localVersion!=='0.0.0') { location.reload(); return; }
     localVersion=version;
     const remote = await fetch(`https://raw.githubusercontent.com/inei49984-ai/shatter-arena/main/package.json?t=${Date.now()}`, {cache:'no-store'});
     if(!remote.ok) return;
-    const latest = await remote.json(); if(isNewer(latest.version,localVersion)) updateBanner.classList.remove('hidden');
+    const latest = await remote.json();
+    if(isNewer(latest.version,localVersion) && canSelfUpdate) updateBanner.classList.remove('hidden');
   } catch { /* Keep the game usable when GitHub is offline. */ }
 }
 checkForUpdates(); setInterval(checkForUpdates, 5*60*1000);
 $('dismissUpdate').addEventListener('click',()=>updateBanner.classList.add('hidden'));
+$('updateButton').addEventListener('click', async()=>{
+  const button=$('updateButton'), message=$('updateMessage'); button.disabled=true; message.textContent='アップデートを取得・適用しています...';
+  try {
+    const response=await fetch('/update',{method:'POST'}), result=await response.json();
+    if(!response.ok||!result.ok) throw new Error(result.error||'更新に失敗しました');
+    message.textContent=`v${result.version} に更新しました。ゲームを再起動しています...`;
+  } catch(error) { message.textContent=error.message||'更新に失敗しました'; button.disabled=false; }
+});
 
 function addLight(s) {
   s.add(new THREE.HemisphereLight(0xdbeeff, 0x263041, 2.1));
