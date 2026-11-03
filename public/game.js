@@ -5,12 +5,13 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 const $ = id => document.getElementById(id);
 const MODEL_URL = '/assets/thomas_the_tank_engine.glb';
+const API_BASE_URL = window.TOMAS_FIGHT_API_BASE_URL;
 const loader = new GLTFLoader();
 const keys = new Set();
 const clock = new THREE.Clock();
 let sourceModel = null, modelPromise = null, game = null, raf = 0, state = 'lobby';
 let elapsed = 0, score = 0, wave = 1, health = 100, spawnIn = 1, ramCooldown = 0, whistleCooldown = 0, whistleTime = 0, damageCooldown = 0, steamTimer = 0;
-let player = null, drones = [], steam = [], arenaRadius = 18, moveTouch = { x: 0, y: 0 }, joystickPointer = null;
+let player = null, drones = [], steam = [], remotePlayers = new Map(), multiplayerSocket = null, networkTimer = 0, arenaRadius = 18, moveTouch = { x: 0, y: 0 }, joystickPointer = null;
 let deviceKey = '', profile = null, lobbyPollTimer = 0;
 const clamp = THREE.MathUtils.clamp;
 const rand = (a,b) => a + Math.random() * (b-a);
@@ -75,6 +76,49 @@ function makeLights(scene) {
   const fill = new THREE.DirectionalLight(0xd6e2e7,.85); fill.position.set(8,8,-7); scene.add(fill);
 }
 
+function createNameTag(name){
+  const canvas=document.createElement('canvas');canvas.width=512;canvas.height=128;const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#182024dd';ctx.beginPath();ctx.roundRect(20,16,472,96,18);ctx.fill();ctx.strokeStyle='#d5bd91';ctx.lineWidth=4;ctx.stroke();
+  ctx.font='bold 44px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#f6f2e8';ctx.fillText(name.slice(0,16),256,64,440);
+  const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+  const tag=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false}));tag.scale.set(3.2,.8,1);tag.position.y=3.35;return tag;
+}
+
+function addRemotePlayer(data){
+  const group=new THREE.Group(),model=sourceModel?configureModel(cloneSkinned(sourceModel)):makeThomasFallback();
+  group.add(model);group.add(createNameTag(data.name));group.position.set(data.x,0,data.z);group.rotation.y=data.yaw;game.scene.add(group);
+  const actor={group,model,target:new THREE.Vector3(data.x,0,data.z),yaw:data.yaw,walk:0,name:data.name};remotePlayers.set(data.id,actor);return actor;
+}
+
+function updateRemoteMessage(message){
+  if(message.type==='leave'){removeRemotePlayer(message.id);return;}
+  const players=message.type==='players'?message.players:[message.player];
+  for(const data of players||[]){if(!data?.id||data.id===profile?.id)continue;let actor=remotePlayers.get(data.id);if(!actor)actor=addRemotePlayer(data);actor.name=data.name;actor.target.set(data.x,0,data.z);actor.yaw=data.yaw;}
+}
+
+function removeRemotePlayer(id){
+  const actor=remotePlayers.get(id);if(!actor)return;game.scene.remove(actor.group);actor.group.traverse(node=>{if(node.isMesh||node.isSprite){node.geometry?.dispose();node.material?.map?.dispose();node.material?.dispose();}});remotePlayers.delete(id);
+}
+
+function connectMultiplayer(){
+  if(!profile||!API_BASE_URL?.startsWith('https://'))return;
+  if(multiplayerSocket&&[WebSocket.CONNECTING,WebSocket.OPEN].includes(multiplayerSocket.readyState))return;
+  const url=new URL('/ws',API_BASE_URL);url.protocol='wss:';url.searchParams.set('deviceKey',deviceKey);
+  const socket=new WebSocket(url);multiplayerSocket=socket;
+  socket.addEventListener('message',event=>{try{updateRemoteMessage(JSON.parse(event.data));}catch(error){console.warn('Invalid multiplayer packet',error);}});
+  socket.addEventListener('close',()=>{if(multiplayerSocket===socket){multiplayerSocket=null;for(const id of [...remotePlayers.keys()])removeRemotePlayer(id);setTimeout(connectMultiplayer,5000);}});
+}
+
+function updateRemotePlayers(dt){
+  for(const actor of remotePlayers.values()){
+    const previous=actor.group.position.clone();actor.group.position.lerp(actor.target,1-Math.exp(-dt*12));
+    const speed=previous.distanceTo(actor.group.position)/Math.max(dt,.001);actor.walk+=speed*dt*2.8;
+    let diff=Math.atan2(Math.sin(actor.yaw-actor.group.rotation.y),Math.cos(actor.yaw-actor.group.rotation.y));actor.group.rotation.y+=diff*(1-Math.exp(-dt*10));
+    actor.model.position.y=actor.model.userData.baseY+Math.sin(actor.walk*2)*.025;
+    for(const pivot of actor.model.userData.wheelPivots||[])pivot.rotation.x+=speed*.72*dt;
+  }
+}
+
 function buildArena(scene) {
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(180,180),new THREE.MeshStandardMaterial({color:0x6f7d68,roughness:1}));ground.rotation.x=-Math.PI/2;ground.position.y=-.3;ground.receiveShadow=true;scene.add(ground);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(arenaRadius,96),new THREE.MeshStandardMaterial({color:0x777a72,metalness:.04,roughness:.92}));
@@ -124,6 +168,13 @@ function upgradePlayerModel(){
   player.group.add(model);player.model=model;
 }
 
+function upgradeRemoteModels(){
+  if(!sourceModel)return;
+  for(const actor of remotePlayers.values()){
+    const old=actor.model,model=configureModel(cloneSkinned(sourceModel));actor.group.remove(old);actor.group.add(model);actor.model=model;
+  }
+}
+
 function makeDrone() {
   const a=Math.random()*Math.PI*2, r=arenaRadius+rand(1,4), x=Math.sin(a)*r,z=Math.cos(a)*r;
   const heavy=wave>=3&&Math.random()<Math.min(.12+wave*.03,.38), fast=!heavy&&wave>=2&&Math.random()<.32;
@@ -146,7 +197,7 @@ function puffSteam() {
 async function loadModel() {
   if(sourceModel)return sourceModel;
   if(modelPromise)return modelPromise;
-  modelPromise=loader.loadAsync(MODEL_URL).then(gltf=>{sourceModel=gltf.scene;sourceModel.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});upgradePlayerModel();$('modelStatus').textContent='Thomas 3D';return sourceModel;
+  modelPromise=loader.loadAsync(MODEL_URL).then(gltf=>{sourceModel=gltf.scene;sourceModel.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});upgradePlayerModel();upgradeRemoteModels();$('modelStatus').textContent='Thomas 3D';return sourceModel;
   }).catch(error=>{modelPromise=null;throw error});
   return modelPromise;
 }
@@ -202,6 +253,7 @@ function finish(){if(state!=='playing')return;state='over';const old=best();if(s
 
 function frame(){
   if(!game)return;raf=requestAnimationFrame(frame);const dt=Math.min(clock.getDelta(),.045);
+  updateRemotePlayers(dt);
   if(state==='menu'&&player){player.model.position.y=player.model.userData.baseY+Math.sin(clock.elapsedTime*1.4)*.012;player.group.rotation.y=Math.sin(clock.elapsedTime*.35)*.035;}
   if(state==='lobby'){
     if(player&&profile){
@@ -224,6 +276,7 @@ function frame(){
       for(const pivot of player.model.userData.wheelPivots||[])pivot.rotation.x+=actualSpeed*.72*dt;
       game.controls.target.set(player.group.position.x+game.focusOffset.x,player.group.position.y+game.focusOffset.y+player.bob,player.group.position.z+game.focusOffset.z);
       steamTimer-=dt;if(actualSpeed>1.3&&steamTimer<=0){puffSteam();steamTimer=.28;}
+      networkTimer-=dt;if(networkTimer<=0){networkTimer=.1;if(multiplayerSocket?.readyState===WebSocket.OPEN)multiplayerSocket.send(JSON.stringify({type:'position',x:player.group.position.x,z:player.group.position.z,yaw:player.yaw}));}
     }
     for(const p of steam){p.life+=dt;p.mesh.position.x+=p.vx*dt;p.mesh.position.z+=p.vz*dt;p.mesh.position.y+=(p.vy||.8)*dt;p.mesh.scale.multiplyScalar(1+dt*1.5);p.mesh.material.opacity=Math.max(0,.48*(1-p.life/p.duration));if(p.life>=p.duration){game.scene.remove(p.mesh);p.mesh.geometry.dispose();p.mesh.material.dispose();p.dead=true;}}
     steam=steam.filter(p=>!p.dead);
@@ -272,13 +325,14 @@ function returnToLobby(){
 
 function getDeviceKey(){let key=localStorage.getItem('shatterArenaDeviceKey');if(!key){key=crypto.randomUUID();localStorage.setItem('shatterArenaDeviceKey',key)}return key}
 function readSavedProfile(){try{return JSON.parse(localStorage.getItem('shatterArenaProfile')||'null')}catch{return null}}
-function saveLocalProfile(value){profile=value;localStorage.setItem('shatterArenaProfile',JSON.stringify(value));$('lobbyName').textContent=value.name;$('lobbyId').textContent=`@${value.id}`;$('myId').textContent=`@${value.id}`;$('profileDot').classList.remove('offline')}
+function saveLocalProfile(value){profile=value;localStorage.setItem('shatterArenaProfile',JSON.stringify(value));$('lobbyName').textContent=value.name;$('lobbyId').textContent=`@${value.id}`;$('myId').textContent=`@${value.id}`;$('profileDot').classList.remove('offline');connectMultiplayer()}
 function openProfile(message=''){
   const saved=profile||readSavedProfile(),suffix=String(Math.floor(1000+Math.random()*9000));
   $('nameInput').value=saved?.name||`Player${suffix}`;$('playerIdInput').value=saved?.id||`Player_${suffix}`;$('profileMessage').textContent=message;$('profileModal').classList.remove('hidden');
 }
 async function api(path,options={}){
-  const response=await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})},cache:'no-store'});
+  if(!API_BASE_URL?.startsWith('https://'))throw new Error('安全なHTTPSサーバーに接続できません。');
+  const response=await fetch(new URL(path,API_BASE_URL),{...options,headers:{'Content-Type':'application/json',...(options.headers||{})},cache:'no-store'});
   let data={};try{data=await response.json()}catch{}
   if(!response.ok){const error=new Error(data.error||`通信エラー (${response.status})`);error.status=response.status;throw error}return data;
 }

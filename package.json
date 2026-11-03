@@ -1,14 +1,33 @@
 {
   "name": "tomas-fight",
-  "version": "4.1.0",
+  "version": "0.1.0",
   "private": true,
+  "description": "A friends lobby and free-roam Thomas game.",
+  "author": "Tomas Fight",
   "type": "module",
+  "main": "desktop/main.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "app": "electron .",
+    "make": "electron-builder --win nsis --publish never"
   },
   "dependencies": {
     "express": "^5.1.0",
-    "three": "^0.180.0"
+    "three": "^0.180.0",
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.tomasfight.desktop",
+    "productName": "Tomas Fight",
+    "asar": true,
+    "directories": {"output": "dist"},
+    "files": ["desktop/**/*", "public/**/*", "!public/assets/soldier_human.glb", "!public/assets/super_human.glb", "node_modules/three/**/*", "node_modules/express/**/*", "package.json"],
+    "win": {"target": [{"target": "nsis", "arch": ["x64"]}], "artifactName": "Tomas-Fight-Setup.${ext}"},
+    "nsis": {"oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "createStartMenuShortcut": true}
   }
 }

@@ -30,7 +30,16 @@ npm install
 npm start
 ```
 
-`http://localhost:3000` を開きます。Three.jsはアプリと同じサーバーから配信します。
+`npm run app` でElectron版を起動します。APIサーバーだけをローカルで試す場合は `npm start` です。
+
+## 配布とオンライン通信
+
+- Windows版はElectronでパッケージし、GitHub Releasesから配布します。
+- ダウンロードページはGitHub Pagesの `docs/` から公開します。
+- Renderの既存 `shatter-arena` サービスはプロフィール、フレンド、オンラインプレイヤー位置のAPI/WebSocketだけを提供します。
+- クライアントはHTTPS / WSSだけに接続します。Renderは外部HTTPS接続をTLSで終端します。
+- GitHub ActionsはインストーラーのSHA-256チェックサムとビルド証明をReleaseに付けます。
+- 今のプロフィールとフレンド情報はサーバーのメモリ上にあり、Renderの再起動時に消えます。
 
 ## 3Dモデルのクレジット
 

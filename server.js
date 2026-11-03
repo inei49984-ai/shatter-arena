@@ -1,21 +1,23 @@
 import express from 'express';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:http';
+import { WebSocket, WebSocketServer } from 'ws';
 
 const app = express();
-const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT) || 3000;
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
-const staticOptions = {
-  maxAge: process.env.RENDER ? '1h' : 0,
-  setHeaders(res, file) {
-    if (/\.(html|js|css|webmanifest)$/i.test(file)) res.setHeader('Cache-Control', 'no-cache');
-  }
-};
-app.use('/vendor/three', express.static(path.join(root, 'node_modules', 'three'), staticOptions));
-app.use(express.static(path.join(root, 'public'), staticOptions));
+function allowedOrigin(origin){return !origin||origin==='https://inei49984-ai.github.io'||/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);}
+app.use((req, res, next) => {
+  const origin = req.get('origin');
+  if (origin && allowedOrigin(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  if (req.path!=='/health'&&process.env.RENDER&&req.get('x-forwarded-proto')!=='https') return res.status(426).json({error:'HTTPS is required.'});
+  next();
+});
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 const profiles = new Map();
@@ -78,6 +80,36 @@ app.delete('/api/friends/:friendId', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('*path', (_req, res) => res.sendFile(path.join(root, 'public', 'index.html')));
+app.use((_req, res) => res.status(404).json({error:'Not found'}));
 
-app.listen(port, '0.0.0.0', () => console.log(`Tomas Fight listening on port ${port}`));
+const server = createServer(app);
+const webSockets = new WebSocketServer({noServer:true,maxPayload:1024,perMessageDeflate:false});
+const livePlayers = new Map();
+const send = (socket, message) => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); };
+const safePlayer = player => ({id:player.id,name:player.name,x:player.x,z:player.z,yaw:player.yaw});
+server.on('upgrade',(request,socket,head)=>{
+  const url=new URL(request.url,'http://localhost');
+  const origin=request.headers.origin;
+  if(url.pathname!=='/ws'||!allowedOrigin(origin)||(request.headers['x-forwarded-proto']&&request.headers['x-forwarded-proto']!=='https')){socket.destroy();return;}
+  webSockets.handleUpgrade(request,socket,head,ws=>webSockets.emit('connection',ws,request,url));
+});
+webSockets.on('connection',(ws,_request,url)=>{
+  const profile=getProfile(url.searchParams.get('deviceKey'));
+  if(!profile){ws.close(1008,'Profile required');return;}
+  const player={deviceKey:profile.deviceKey,id:profile.id,name:profile.name,x:0,z:0,yaw:0};
+  livePlayers.set(profile.deviceKey,{ws,player});profile.lastSeen=Date.now();
+  send(ws,{type:'players',players:[...livePlayers.values()].filter(entry=>entry.ws!==ws).map(entry=>safePlayer(entry.player))});
+  ws.on('message',raw=>{
+    let message;try{message=JSON.parse(raw.toString())}catch{return;}
+    if(message?.type!=='position')return;
+    for(const value of [message.x,message.z,message.yaw])if(!Number.isFinite(value))return;
+    player.x=Math.max(-17,Math.min(17,message.x));player.z=Math.max(-17,Math.min(17,message.z));player.yaw=message.yaw;player.name=profile.name;player.id=profile.id;profile.lastSeen=Date.now();
+    const packet={type:'player',player:safePlayer(player)};
+    for(const entry of livePlayers.values())if(entry.ws!==ws)send(entry.ws,packet);
+  });
+  ws.on('close',()=>{
+    const current=livePlayers.get(profile.deviceKey);
+    if(current?.ws===ws){livePlayers.delete(profile.deviceKey);for(const entry of livePlayers.values())send(entry.ws,{type:'leave',id:profile.id});}
+  });
+});
+server.listen(port, '0.0.0.0', () => console.log(`Tomas Fight multiplayer server listening on port ${port}`));
