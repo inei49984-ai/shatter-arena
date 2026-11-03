@@ -3,9 +3,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 const roster = [
-  { id:'soldier', name:'SOLDIER', jp:'戦場の歩兵', role:'BALANCED / ALL-ROUNDER', file:'/assets/soldier_human.glb', tint:0x77dff4 },
-  { id:'super', name:'SUPER HUMAN', jp:'超人', role:'POWER / HEAVY HITTER', file:'/assets/super_human.glb', tint:0xffb565 },
-  { id:'thomas', name:'THOMAS', jp:'タンク機関車', role:'RAPID / MOBILE', file:'/assets/thomas_the_tank_engine.glb', tint:0xcca1ff }
+  { id:'soldier', name:'SOLDIER', jp:'戦場の歩兵', role:'BALANCED / ALL-ROUNDER', meleeName:'クロススラッシュ', skillName:'閃光連斬', file:'/assets/soldier_human.glb', tint:0x77dff4 },
+  { id:'super', name:'SUPER HUMAN', jp:'超人', role:'POWER / HEAVY HITTER', meleeName:'ヘヴィブレイカー', skillName:'メテオスマッシュ', file:'/assets/super_human.glb', tint:0xffb565 },
+  { id:'thomas', name:'THOMAS', jp:'タンク機関車', role:'RAPID / MOBILE', meleeName:'ボイラーバッシュ', skillName:'サンダーチャージ', file:'/assets/thomas_the_tank_engine.glb', tint:0xcca1ff }
 ];
 const loader = new GLTFLoader();
 const cache = new Map(), loaded = new Map();
@@ -71,22 +71,28 @@ async function loadModel(id) {
   return cache.get(id);
 }
 function cloneModel(id) { const base = loaded.get(id); return normalizeModel(cloneSkinned(base.scene)); }
-function createAnimator(root) {
+function createAnimator(root, fighterId='soldier') {
   const mixer = new THREE.AnimationMixer(root), basePosition = root.position.clone();
   const baseQuaternion = root.quaternion.clone();
   const wheels=[];
   root.traverse(node=>{if(/wheel/i.test(node.name)){wheels.push({node,rotation:node.rotation.x});}});
-  let wheelPhase=0;
-  const clip = (name, times, offsets, lean) => {
+  let wheelPhase=0, activeKind='';
+  const clip = (name, times, offsets, rotations) => {
     const positions = offsets.flatMap(v => [basePosition.x+v[0],basePosition.y+v[1],basePosition.z+v[2]]);
-    const rotations = lean.flatMap(v => { const q=baseQuaternion.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),v)); return [q.x,q.y,q.z,q.w]; });
-    return new THREE.AnimationClip(name,-1,[new THREE.VectorKeyframeTrack('.position',times,positions),new THREE.QuaternionKeyframeTrack('.quaternion',times,rotations)]);
+    const quats = rotations.flatMap(v => { const q=baseQuaternion.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(v[0],v[1],v[2]))); return [q.x,q.y,q.z,q.w]; });
+    return new THREE.AnimationClip(name,-1,[new THREE.VectorKeyframeTrack('.position',times,positions),new THREE.QuaternionKeyframeTrack('.quaternion',times,quats)]);
   };
+  const styles={
+    soldier:{ idle:[[0,0,0],[0,.018,0],[0,0,0]],idleLean:[0,.012,0],run:[[0,0,0],[0,.055,.035],[0,0,0],[0,.055,-.035],[0,0,0]],melee:[[0,0,0],[0,.025,.11],[0,0,.2],[0,-.015,.08],[0,0,0]],skill:[[0,0,0],[0,.015,.1],[0,.035,.2],[0,.015,.12],[0,0,0]] },
+    super:{ idle:[[0,0,0],[0,.012,0],[0,0,0]],idleLean:[0,.008,0],run:[[0,0,0],[0,.09,.05],[0,-.015,0],[0,.09,-.05],[0,0,0]],melee:[[0,0,0],[.13,-.1,.12],[0,-.17,.22],[-.1,.02,.08],[0,0,0]],skill:[[0,0,0],[0,-.22,.08],[0,.65,.2],[0,.12,.48],[0,0,0]] },
+    thomas:{ idle:[[0,0,0],[0,.018,0],[0,0,0]],idleLean:[0,.018,0],run:[[0,0,0],[0,.045,.06],[0,0,0],[0,.045,-.06],[0,0,0]],melee:[[0,0,0],[0,.08,.18],[0,-.05,.3],[0,.035,.12],[0,0,0]],skill:[[0,0,0],[0,-.04,.12],[0,.08,.42],[0,-.08,.36],[0,0,0]] }
+  }[fighterId]||{idle:[[0,0,0],[0,.02,0],[0,0,0]],idleLean:[0,.01,0],run:[[0,0,0],[0,.07,.04],[0,0,0],[0,.07,-.04],[0,0,0]],melee:[[0,0,0],[0,.04,.2],[0,-.02,.11],[0,0,0],[0,0,0]],skill:[[0,0,0],[0,.1,.25],[0,.02,.58],[0,0,0],[0,0,0]]};
+  const neutral=[0,0,0];
   const clips = {
-    idle:clip('idle',[0,.5,1],[[0,0,0],[0,.025,0],[0,0,0]],[0,.01,0]),
-    run:clip('run',[0,.25,.5,.75,1],[[0,0,0],[0,.075,.04],[0,0,0],[0,.075,-.04],[0,0,0]],[0,.035,0,-.035,0]),
-    melee:clip('melee',[0,.11,.23,.42],[[0,0,0],[0,.04,.2],[0,-.02,.11],[0,0,0]],[0,-.42,.2,0]),
-    skill:clip('skill',[0,.18,.34,.62],[[0,0,0],[0,.1,.25],[0,.02,.58],[0,0,0]],[0,-.5,.28,0])
+    idle:clip('idle',[0,.5,1],styles.idle,[neutral,styles.idleLean||neutral,neutral]),
+    run:clip('run',[0,.16,.32,.48,.64],styles.run,styles.run.map((_,i)=>[0,(i%2?.045:-.045),i%2?-.025:.025])),
+    melee:clip('melee',[0,.12,.24,.38,.52],styles.melee,fighterId==='super'?[[0,0,0],[.12,0,-.18],[-.28,0,.12],[.1,0,.08],[0,0,0]]:fighterId==='thomas'?[[0,0,0],[-.08,0,0],[.16,0,0],[-.08,0,0],[0,0,0]]:[[0,0,0],[0,-.22,-.1],[0,.5,.12],[0,-.08,.04],[0,0,0]]),
+    skill:clip('skill',[0,.16,.31,.48,.72],styles.skill,fighterId==='super'?[[0,0,0],[.2,0,0],[-.48,0,0],[.28,0,0],[0,0,0]]:fighterId==='thomas'?[[0,0,0],[-.04,0,0],[.12,0,0],[-.1,0,0],[0,0,0]]:[[0,0,0],[-.12,-.4,0],[0,1.8,0],[.06,3.6,0],[0,6.28,0]])
   };
   const actions = Object.fromEntries(Object.entries(clips).map(([name,c])=>[name,mixer.clipAction(c)]));
   let base=actions.idle, active=null, moving=false;
@@ -99,14 +105,14 @@ function createAnimator(root) {
   };
   mixer.addEventListener('finished',event=>{
     if(event.action!==active)return;
-    active.stop(); active=null; base= moving?actions.run:actions.idle; base.reset().fadeIn(.12).play();
+    active.stop(); active=null; activeKind=''; base= moving?actions.run:actions.idle; base.reset().fadeIn(.12).play();
   });
   return {
-    update(dt,isMoving){ syncLocomotion(isMoving); mixer.update(dt); if(isMoving){wheelPhase+=dt*7;for(const wheel of wheels)wheel.node.rotation.x=wheel.rotation+wheelPhase;} },
+    update(dt,isMoving){ syncLocomotion(isMoving); mixer.update(dt); if(isMoving||activeKind==='skill'){wheelPhase+=dt*(fighterId==='thomas'&&activeKind==='skill'?24:7);for(const wheel of wheels)wheel.node.rotation.x=wheel.rotation+wheelPhase;} },
     play(kind){
       if(active)active.stop();
       base.fadeOut(.06);
-      active=actions[kind]||actions.melee; active.reset(); active.setLoop(THREE.LoopOnce,1); active.clampWhenFinished=true; active.fadeIn(.05).play();
+      activeKind=kind; active=actions[kind]||actions.melee; active.reset(); active.setLoop(THREE.LoopOnce,1); active.clampWhenFinished=true; active.fadeIn(.05).play();
     }
   };
 }
@@ -115,14 +121,14 @@ function createAnimator(root) {
 const cards = $('cards');
 for (const item of roster) {
   const card = document.createElement('article'); card.className = `fighter${item.id===chosen?' selected':''}`; card.dataset.id = item.id;
-  card.innerHTML = `<canvas></canvas><span class="pick">${item.id===chosen?'SELECTED':'SELECT'}</span><div class="fighter-info"><small>${item.role}</small><b>${item.name}</b><p>${item.jp}</p></div>`;
+  card.innerHTML = `<canvas></canvas><span class="pick">${item.id===chosen?'SELECTED':'SELECT'}</span><div class="fighter-info"><small>${item.role}</small><b>${item.name}</b><p>${item.jp}</p><span class="technique">必殺技 · ${item.skillName}</span></div>`;
   card.addEventListener('click', () => { chosen = item.id; document.querySelectorAll('.fighter').forEach(c => { const yes=c.dataset.id===chosen; c.classList.toggle('selected',yes); c.querySelector('.pick').textContent=yes?'SELECTED':'SELECT'; }); });
   cards.append(card);
   const canvas = card.querySelector('canvas');
   const r = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true }); r.setPixelRatio(Math.min(devicePixelRatio,1.5)); r.setSize(card.clientWidth,card.clientHeight,false); r.outputColorSpace=THREE.SRGBColorSpace;
   const s = new THREE.Scene(), c = new THREE.PerspectiveCamera(32, card.clientWidth/card.clientHeight, .1, 100); c.position.set(0,1.4,6.3); c.lookAt(0,1,0); addLight(s);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(1.1,48),new THREE.MeshStandardMaterial({color:0x1a2b3b,roughness:.8})); floor.rotation.x=-Math.PI/2; floor.position.y=.015; s.add(floor);
-  loadModel(item.id).then(() => { const m=cloneModel(item.id); m.rotation.y=-.2; m.userData.animator=createAnimator(m); s.add(m); card.dataset.ready='1'; }).catch(()=> { card.querySelector('.pick').textContent='MODEL ERROR'; });
+  loadModel(item.id).then(() => { const m=cloneModel(item.id); m.rotation.y=-.2; m.userData.animator=createAnimator(m,item.id); s.add(m); card.dataset.ready='1'; }).catch(()=> { card.querySelector('.pick').textContent='MODEL ERROR'; });
   const preview = {r,s,c,card};
   let last=performance.now();
   const animate = () => { if (!document.body.contains(card)) { r.dispose(); return; } const now=performance.now(),dt=Math.min((now-last)/1000,.05);last=now; const fighter=s.children.find(o=>o.isGroup); if(fighter){fighter.rotation.y+=.003;fighter.userData.animator?.update(dt,false);} r.render(s,c); requestAnimationFrame(animate); };
@@ -146,7 +152,7 @@ function makeEntity(id,p) {
   let model;
   try { model=cloneModel(p.model); } catch { const mesh=new THREE.Mesh(new THREE.CapsuleGeometry(.4,.9,4,8),new THREE.MeshStandardMaterial({color:p.color})); model=new THREE.Group(); model.add(mesh); }
   group.add(model); group.position.set(p.x,0,p.z); group.rotation.y=p.yaw||0;
-  const animator=createAnimator(model);
+  const animator=createAnimator(model,p.model);
   const ring=new THREE.Mesh(new THREE.RingGeometry(.52,.62,32),new THREE.MeshBasicMaterial({color:p.color,side:THREE.DoubleSide,transparent:true,opacity:.65}));ring.rotation.x=-Math.PI/2;ring.position.y=.03;group.add(ring);
   const bar=new THREE.Group();bar.position.y=2.35;group.add(bar);
   const plate=new THREE.Mesh(new THREE.PlaneGeometry(1.6,.28),new THREE.MeshBasicMaterial({color:0x07101a,transparent:true,opacity:.82,side:THREE.DoubleSide}));bar.add(plate);
@@ -170,13 +176,27 @@ function makeShot(x,z,angle,color=0x8ef0ff) {
   const from=new THREE.Vector3(x,.95,z), to=new THREE.Vector3(x+Math.sin(angle)*15,.95,z+Math.cos(angle)*15);
   const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([from,to]),new THREE.LineBasicMaterial({color,transparent:true,opacity:.9}));scene.add(line);effects.push({line,t:0});
 }
-function makeCombatFx(x,z,angle,type) {
-  const skill=type==='skill', group=new THREE.Group();
-  group.position.set(x+Math.sin(angle)*(skill?1.75:.9),.12,z+Math.cos(angle)*(skill?1.75:.9)); group.rotation.y=angle;
-  const geometry=new THREE.TorusGeometry(skill ? 1.55 : .9,skill ? .13 : .075,8,36,Math.PI*.92);
-  const material=new THREE.MeshBasicMaterial({color:skill?0x8d79ff:0x76eaff,transparent:true,opacity:.95,side:THREE.DoubleSide});
-  const arc=new THREE.Mesh(geometry,material); arc.rotation.x=Math.PI/2; arc.position.y=.9; group.add(arc); scene.add(group);
-  effects.push({group,material,t:0,duration:skill ? .58 : .34,combat:true});
+function makeCombatFx(x,z,angle,type,fighterId='soldier') {
+  const skill=type==='skill', group=new THREE.Group(), materials=[];
+  const palette={soldier:[0x75eaff,0xf5fdff],super:[0xffa33f,0xffe997],thomas:[0xb38cff,0x7deaff]}[fighterId]||[0x75eaff,0xf5fdff];
+  const add=(geometry,color,position,rotation=[0,0,0],scale=1)=>{const material=new THREE.MeshBasicMaterial({color,transparent:true,opacity:.95,side:THREE.DoubleSide,depthWrite:false});materials.push(material);const mesh=new THREE.Mesh(geometry,material);mesh.position.set(...position);mesh.rotation.set(...rotation);mesh.scale.setScalar(scale);group.add(mesh);return mesh;};
+  const dist=fighterId==='super'?(skill?2.7:1.35):fighterId==='thomas'?(skill?2.2:1.15):(skill?1.9:1.05);
+  group.position.set(x+Math.sin(angle)*dist,.08,z+Math.cos(angle)*dist);group.rotation.y=angle;
+  if(fighterId==='soldier'){
+    const cuts=skill?3:2;
+    for(let i=0;i<cuts;i++){const slash=add(new THREE.TorusGeometry(skill?1.15:.78,.055,8,42,Math.PI*.78),i%2?palette[1]:palette[0],[0,1.02+i*.07,0],[Math.PI/2,0,-.55+i*.48],skill?1+i*.13:1);}
+    if(skill){const flash=add(new THREE.OctahedronGeometry(.28,1),palette[1],[0,1.05,0],[0,0,0],1);flash.userData.flash=true;}
+  } else if(fighterId==='super'){
+    add(new THREE.TorusGeometry(skill?1.75:1.15,.16,10,48),palette[0],[0,.22,0],[0,0,0],.68);
+    add(new THREE.TorusGeometry(skill?1.12:.72,.09,8,40),palette[1],[0,.28,0],[0,0,0],.8);
+    if(skill)for(let i=0;i<8;i++){const a=i*Math.PI/4;const shard=add(new THREE.ConeGeometry(.11,.8,5),i%2?palette[0]:palette[1],[Math.sin(a)*.85,.12,Math.cos(a)*.85],[Math.PI/2,0,-a],1);}
+  } else {
+    const puffs=skill?7:4;
+    for(let i=0;i<puffs;i++){const a=i*2.4;const puff=add(new THREE.SphereGeometry(skill?.25:.19,10,8),i%2?palette[0]:palette[1],[Math.sin(a)*.48,.65+(i%3)*.22,Math.cos(a)*.48],[0,0,0],.7+(i%3)*.12);puff.userData.puff=true;}
+    add(new THREE.TorusGeometry(skill?1.42:.9,.085,8,40),palette[0],[0,.68,0],[Math.PI/2,0,0],.8);
+    if(skill)add(new THREE.TorusGeometry(1.02,.045,8,36),palette[1],[0,.72,0],[Math.PI/2,0,0],.75);
+  }
+  scene.add(group);effects.push({group,materials,t:0,duration:skill?.82:.48,combat:true,fighterId,skill});
 }
 function performAttack(type) {
   if(!running||!socket)return;
@@ -186,7 +206,8 @@ function performAttack(type) {
   const cooldown=type==='skill'?6500:620;
   if(type==='skill')skillReadyAt=now+cooldown;else meleeReadyAt=now+cooldown;
   yaw=cameraYaw; me.group.rotation.y=yaw; me.animator.play(type);
-  makeCombatFx(me.group.position.x,me.group.position.z,yaw,type);
+  makeCombatFx(me.group.position.x,me.group.position.z,yaw,type,me.p.model);
+  const fighter=roster.find(item=>item.id===me.p.model);toast(`${type==='skill'?fighter?.skillName:fighter?.meleeName}！`);
   socket.emit(type==='skill'?'skill':'melee',{yaw});
 }
 function frame() {
@@ -202,7 +223,7 @@ function frame() {
     const remaining=Math.max(0,skillReadyAt-performance.now()); $('skillCooldown').textContent=remaining>0?`Q ${ (remaining/1000).toFixed(1) }s`:'Q READY'; $('skillCooldown').classList.toggle('ready',remaining<=0);
   }
   const now=performance.now(); for(const [id,remote] of entities)if(id!==selfId){remote.animator.update(dt,remote.movingUntil>now);remote.bar.lookAt(camera.position);}
-  for(const fx of effects){fx.t+=dt;if(fx.combat){const progress=Math.min(1,fx.t/fx.duration);fx.group.scale.setScalar(.72+progress*.85);fx.material.opacity=1-progress;if(progress>=1){scene.remove(fx.group);fx.group.children[0].geometry.dispose();fx.material.dispose();}}else{fx.line.material.opacity=Math.max(0,1-fx.t/.18);if(fx.t>.18){scene.remove(fx.line);fx.line.geometry.dispose();fx.line.material.dispose();}}} effects=effects.filter(x=>x.combat?x.t<x.duration:x.t<=.18);
+  for(const fx of effects){fx.t+=dt;if(fx.combat){const progress=Math.min(1,fx.t/fx.duration);fx.group.scale.setScalar(.35+progress*(fx.fighterId==='super'?1.75:1.1));fx.group.rotation.y+=dt*(fx.fighterId==='soldier'?9:fx.fighterId==='thomas'?2:0);for(const material of fx.materials)material.opacity=1-progress;if(fx.fighterId==='thomas')for(const puff of fx.group.children)if(puff.userData.puff){puff.position.y+=dt*(fx.skill?1.8:1.1);puff.scale.multiplyScalar(1+dt*.8);}if(progress>=1){scene.remove(fx.group);for(const child of fx.group.children)child.geometry.dispose();for(const material of fx.materials)material.dispose();}}else{fx.line.material.opacity=Math.max(0,1-fx.t/.18);if(fx.t>.18){scene.remove(fx.line);fx.line.geometry.dispose();fx.line.material.dispose();}}} effects=effects.filter(x=>x.combat?x.t<x.duration:x.t<=.18);
   renderer.render(scene,camera);
 }
 async function join() {
@@ -217,7 +238,7 @@ async function join() {
     selfId=res.id; $('roomLabel').textContent=res.code; lobby.classList.add('hidden'); game.classList.remove('hidden');loading.classList.add('hidden'); arena(); yaw=0;cameraYaw=0;cameraPitch=.28;cameraDistance=7.5;meleeReadyAt=0;skillReadyAt=0;running=true;
     socket.on('state',updatePlayers); socket.on('move',p=>{const e=entities.get(p.id);if(e){e.group.position.set(p.x,0,p.z);e.group.rotation.y=p.yaw;e.movingUntil=performance.now()+140;}});
     socket.on('feed',toast); socket.on('shot',p=>makeShot(p.x,p.z,p.yaw,0xffc36a)); socket.on('hit',p=>{if(p.to===selfId)toast('被弾！');if(p.from===selfId)toast('HIT!');});
-    socket.on('combat',data=>{const e=entities.get(data.id);if(e){e.group.rotation.y=data.yaw;e.animator.play(data.type);makeCombatFx(e.group.position.x,e.group.position.z,data.yaw,data.type);}if(data.hitIds?.includes(selfId))toast(data.type==='skill'?'衝撃波を受けた！':'近接攻撃を受けた！');}); frame();
+    socket.on('combat',data=>{const e=entities.get(data.id);if(e){e.group.rotation.y=data.yaw;e.animator.play(data.type);makeCombatFx(e.group.position.x,e.group.position.z,data.yaw,data.type,e.p.model);}if(data.hitIds?.includes(selfId))toast(data.type==='skill'?'専用技を受けた！':'近接攻撃を受けた！');}); frame();
     socket.on('combatResult',result=>{if(result.hitIds?.length)toast(result.type==='skill'?'衝撃波 HIT!':'近接 HIT!');});
   });});
   socket.on('connect_error',()=>{toast('サーバーに接続できません。サーバー画面で npm.cmd start が動いているか確認してください');socket.disconnect();resetJoin();});
