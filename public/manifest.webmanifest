@@ -1,16 +1,14 @@
 {
   "id": "/",
-  "name": "SHATTER ARENA",
-  "short_name": "SHATTER",
-  "description": "モデルを選んで戦うオンラインアリーナ",
+  "name": "SHATTER ARENA — LAST STAND",
+  "short_name": "SHATTER ARENA",
+  "description": "ドローンの波を撃退し、コアを守るサバイバルゲーム。",
   "lang": "ja",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#080b13",
-  "theme_color": "#080b13",
-  "icons": [
-    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
-  ]
+  "background_color": "#080b12",
+  "theme_color": "#080b12",
+  "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }
